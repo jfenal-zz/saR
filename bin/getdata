@@ -1,0 +1,29 @@
+#!/bin/bash
+export LANG
+LANG=C
+
+hwmodel=$(sudo dmidecode -t 1 | perl -nle 'print $1 if /Version: (.*)/')
+cpumodel=$(sudo dmidecode -s processor-version)
+nbcpu=$(sudo dmidecode -t 4 | grep 'Core Count' | wc -l)
+corespercpu=$(sudo dmidecode -t 4 | grep 'Core Count' | perl -lane 'print $F[-1]')
+ram=$(perl -nle 'print $1 if /MemTotal: (.*)/' /proc/meminfo)
+oslevel=$(< /etc/redhat-release)
+san="no"
+
+cat << EOF
+HW Model :  $hwmodel
+CPU Model :  $cpumodel
+Nb CPUs : $nbcpu
+Nb Cores/cpu : $corespercpu 
+RAM : $ram
+OS Level :  $oslevel
+SAN : $san
+EOF
+
+echo "======================================================================="
+for i in 7 6 5 4 3 2 1; do 
+    sa=$(date +'%d' -d '7 days ago')
+    sar -A -f /var/log/sa/sa$sa
+    echo "======================================================================="
+done
+
