@@ -1,9 +1,9 @@
-#!perl -T
+#!perl
 
 use 5.006;
 use strict;
 use warnings;
-use Test::More tests => 5;
+use Test::More tests => 4;
 
 sub not_in_file_ok {
     my ($filename, %regex) = @_;
@@ -50,8 +50,7 @@ TODO: {
   );
 
   module_boilerplate_ok('lib/saR.pm');
-  module_boilerplate_ok('lib/saR/Loader.pm');
-  module_boilerplate_ok('lib/saR/R.pm');
+  module_boilerplate_ok('lib/saR/Load.pm');
 
 
 }

@@ -6,7 +6,7 @@ use warnings;
 
 =head1 NAME
 
-saR::R - The great new saR::R!
+saR::R - Feed data 
 
 =head1 VERSION
 
