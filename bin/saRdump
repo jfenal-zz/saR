@@ -1,0 +1,19 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use lib qw( . .. lib ../lib );
+use saR;
+use Pod::Usage;
+use Carp;
+use Data::Dumper;
+#use Getopt::Long qw(:config bundling);
+
+use vars qw( $s );
+
+#my $s = saR->new( dir => [ '../data', 'data' ], ext => [ 'txt' ] );
+my $s = saR->new( dir => [ '../data', 'data' ]);
+print Dumper $s;
+my $loader = $s->load( 'machine1', 'machine2' );
+print Dumper $s->{data};
+
