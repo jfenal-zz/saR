@@ -4,10 +4,12 @@ use 5.006;
 use strict;
 use warnings;
 use Exporter qw( import );
+use English;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(  );
 our @EXPORTS = qw( $VERSION );
 use Params::Validate;
+use Data::Dumper;
 use Carp;
 
 
@@ -22,11 +24,11 @@ Version 0.01
 =cut
 
 our $VERSION = '0.01';
+=pod
 
-
-$data = (
-    cols => [
-        '' => [ qw(
+my $data = (
+    cols => {
+        'none' => [ qw(
           proc/s
           cswch/s
           pswpin/s pswpout/s
@@ -41,16 +43,14 @@ $data = (
         CPU  => [
             qw(i000/s i001/s i008/s i009/s i012/s i051/s i059/s i067/s i075/s i083/s i090/s i122/s i130/s i138/s i146/s i178/s i186/s i194/s i202/s i210/s i218/s i234/s )
         ],
-        TTY   => [qw(rcvin/s xmtin/s framerr/s prtyerr/s brk/s ovrun/s)],
-        IFACE => [
-            qw(rxerr/s txerr/s coll/s rxdrop/s txdrop/s txcarr/s rxfram/s rxfifo/s txfifo/s)
-        ],
-        IFACE =>
-          [ qw(rxpck/s txpck/s rxbyt/s txbyt/s rxcmp/s txcmp/s rxmcst/s) ],
-        DEV =>
-          [ qw( tps rd_sec/s wr_sec/s avgrq-sz avgqu-sz await svctm %util) ],
-    ]
+        TTY   => [ qw(rcvin/s xmtin/s framerr/s prtyerr/s brk/s ovrun/s) ],
+        IFACE => [ qw(rxerr/s txerr/s coll/s rxdrop/s txdrop/s txcarr/s rxfram/s rxfifo/s txfifo/s) ],
+        IFACE => [ qw(rxpck/s txpck/s rxbyt/s txbyt/s rxcmp/s txcmp/s rxmcst/s) ],
+        DEV =>   [ qw( tps rd_sec/s wr_sec/s avgrq-sz avgqu-sz await svctm %util) ],
+    }
 );
+=cut
+
 
 
 =head1 SYNOPSIS
@@ -73,8 +73,96 @@ TODO: not yet.
 =cut
 
 sub new {
+    my ($class, $file) = @_;
+
+    my $self = {};
+    bless $self, $class;
+    $self->{file} = $file;
+
+    return $self;
+}
+
+=head2 open 
+
+Open the file for read
+
+=cut
+
+sub open {
+    my ($self) = @_;
+
+    my $fh;
+    if ( !open $fh, '<', $self->{file} ) {
+        croak "Couldn't open file $self->{file} $ERRNO\n";    }
+    $self->{fh} = $fh;
+
+    return $self;
+}
+
+=head2 base_info
+
+Actually load the data base info
+
+=cut
+
+sub base_info {
+    my ($self) = @_;
+
+    my %info = (
+        'HW Model'     => { v => 'hwmodel', },
+        'CPU Model'    => { v => 'cpumodel', },
+        'Nb CPUs'      => { v => 'cpus', },
+        'Nb Cores/cpu' => { v => 'cores', },
+        'RAM'          => { v => 'ram', },
+        'OS Level'     => { v => 'oslevel', },
+        'SAN'          => { v => 'san', },
+    );
+    my %bi = ();
+
+    # compile regexps
+    for my $s ( keys %info ) {
+        $info{$s}->{re} = qr{^$s\s*:\s*(.*)}i;
+    }
+
+    $self->open;
+
+    my $nline=0;
+    my $fh = $self->{fh};
+    LOOP:
+    while ( my $l = <$fh> ) {
+        chomp $l;
+        for my $s ( keys %info ) {
+            if ( $l =~ qr{$info{$s}->{re}} ) {
+                $bi{$info{$s}->{v}} = $1;
+            }
+        }
+        last LOOP if $nline++ > 100;
+    }
+    
+    $self->close;
+
+    return \%bi;
+}
+
+=head2 close
+
+Close file.
+
+=cut
+
+
+sub close {
+    my ($self) = @_;
+
+    if ( defined( $self->{fh} ) ) {
+        if ( ! close($self->{fh}) ) {
+            croak "Couldn't close file $self->{file}: $ERRNO\n";
+        }
+    }
 
 }
+
+
 
 =head1 AUTHOR
 

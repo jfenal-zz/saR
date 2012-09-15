@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use Carp;
 
-#use saR::Load;
+use saR::Load;
 
 =head1 NAME
 
@@ -93,32 +93,35 @@ sub new {
     return $self;
 }
 
-=head2 load
+=head2 base_info
 
 Load one or multiple machine files.
 Heuristic is to look at all stated directories and all file extensions
 passed in C<new()>, and use the first filename found in the form
 C<$dir/${machine}.$ext>.
 
-  $s->load( qw( machine1 machine2 machine3 ) );
+  $s->base_info( qw( machine1 machine2 machine3 ) );
 
 =cut
 
-sub load {
+sub base_info {
     my ( $self, @args ) = @_;
+
+    my %base_info;
 
     foreach my $machine (@args) {
         my $file = $self->_findfile($machine);
         if ( defined $file ) {
             $self->debug("Loading file $file for machine $machine");
 
-            my $loader = __PACKAGE__::Load->new( $file );
-            $loader->load;
+            my $loader = saR::Load->new( $file );
+            $base_info{$machine} = $loader->base_info; 
         }
         else {
             carp "No file found for machine $machine";
         }
     }
+    return %base_info;
 }
 
 sub _findfile {

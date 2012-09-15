@@ -7,13 +7,61 @@ use saR;
 use Pod::Usage;
 use Carp;
 use Data::Dumper;
+
 #use Getopt::Long qw(:config bundling);
 
 use vars qw( $s );
 
 #my $s = saR->new( dir => [ '../data', 'data' ], ext => [ 'txt' ] );
-my $s = saR->new( dir => [ '../data', 'data' ]);
-print Dumper $s;
-my $loader = $s->load( 'machine1', 'machine2' );
-print Dumper $s->{data};
+#my $s = saR->new( dir => [ '../data', 'data' ] );
+my $s = saR->new( dir => [ glob('/net/quad/home/jfenal/SG/metriques*') ], ext=> ['txt'] );
 
+print Dumper $s;
+
+#my @machines = qw( machine1 machine2 );
+my @machines =
+  qw( hpmalq33 ppmalq41 hngclx11 hpmalq51 ppmalq01 hpmalq61 hpmalq65
+  hpmalq57 dngclx04 hpmalq02 hpmalq63 dngclx01 hpmalq60 ppmalq11
+  pngclx02 hpmalq66 hpmalq03 ppmalq03 hpmalq62 dpmalx10 hpmalq31
+  ppmalq40 pwlslx11 pwlslx14 ppmalx10 ppmalq10 hpmalq55 hpmalq52
+  ppmalq31 pngclx03 dngclx03 pwlslx01 hngclx04 hpmalq04 dpmalq51
+  ppmalq04 dpmalq01 hpmalq01 hpmalq56 ppmalq21 hpmalq30 pwlslx13
+  dpmalq52 ppmalq20 pwlslx12 hngclx12 pngclx01 hpmalq58 dpmalq80
+  hpmalq32 ppmalq30 ppmalq02 pwlslx05 pwlslx06 pngclx04 dngclx02
+  hngclx03 hskrlx21 httklx02 peaolx02 hifalx02 hdrplx06 hskrlx03
+  hmcflx02 hdrplx54 hdrplx57 heaolx01 heurlx04 pskrlx22 ppgrlx02
+  pdrplx16 pdrplx23 hbsmlx17 pskrlx01 pseglx04 pdrplx13 deaolx02
+  pdrplx10 heaolx06 pdrplx08 pdrplx03 peaolx03 hseglx04 hseglx02
+  pdrplx12 ddrplx12 peurlx01 heaolx03 hbsmlx04 hseglx01 hdrplx05
+  hdrplx59 hbkelx04 hifalx01 pskrlx02 pdrplx26 pbsmlx06 pbkelx04
+  pdrplx22 peurlx04 pseglx05 hpgrlx01 ppgrlx01 ddrplx13 hseglx03
+  pdrplx07 hdrplx55 pbkelx02 heurlx01 peurlx02 dsgilx01 dbkelx03
+  hdrplx52 psgilx01 hdrplx08 pdrplx29 hdrplx04 pdrplx19 pbsmlx07
+  pifalx01 pttklx04 dttklx01 pbsmlx08 pdrplx01 hbkelx03 pseglx06
+  peaolx08 ddrplx10 pdrplx21 hsgilx02 hbsmlx06 hbkelx02 psgilx02
+  hdrplx02 pdrplx25 hdrplx51 pttklx03 pdrplx17 pskrlx12 deaolx01
+  hbsmlx18 pdrplx09 dmcflx01 pseglx03 hbkelx01 pdrplx27 difalx02
+  pskrlx11 pdrplx30 peaolx04 deurlx03 pseglx02 hseglx06 pdrplx24
+  peaolx01 hskrlx12 httklx03 pdrplx14 deurlx02 pttklx01 peurlx03
+  pdrplx04 pdrplx06 pdrplx28 hsgilx01 hdrplx50 pskrlx21 pdrplx18
+  hbsmlx19 heaolx07 deurlx01 pdrplx05 hmcflx01 psaslx01 pbkelx01
+  peaolx07 heurlx03 pbkelx03 hseglx05 hpgrlx02 heaolx02 hskrlx11
+  httklx01 hbsmlx05 pmcflx02 hskrlx02 hskrlx22 pdrplx20 pttklx02
+  dbkelx01 hdrplx56 peaolx06 hdrplx53 ddrplx11 hdrplx01 pdrplx11
+  hdrplx07 heurlx02 pdrplx02 pdrplx15 hbsmlx20 pifalx02 hdrplx03
+  pmcflx01 podplx11 podplx15 podplx16 podplx12 hodplx06 hodplx03
+  hodplx16 hodplx05 hodplx21 hodplx04 hodplx13 hodplx01 podplx20
+  hodplx20 hodplx11 dodplx10 hodplx02 podplx21 hodplx15 dodplx01
+  hodplx14 podplx14 hodplx10 podplx13 hodplx12);
+
+my %base_info = $s->base_info(@machines);
+#print Dumper $s->{data};
+#print Dumper \%base_info;
+my @info = qw(hwmodel cpumodel cpus cores ram oslevel san);
+
+foreach my $m (keys %base_info) {
+    my %bi = %{$base_info{$m}};
+    print join ';', $m, @bi{@info};
+
+    print "\n";
+}
