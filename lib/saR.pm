@@ -5,6 +5,8 @@ use strict;
 use warnings;
 use Carp;
 
+use File::Basename;
+use File::Spec;
 use saR::Load;
 
 =head1 NAME
@@ -90,8 +92,66 @@ sub new {
         $self->{_config}->{ext} = [q()];
     }
 
+    $self->{machines} = {};
+
+    $self->find_machine_files;
+
     return $self;
 }
+
+=head2 find_machine_files
+
+Find machines files according to dirs, extensions, and file patterns.
+
+    $self->find_machine_files( qw(hp* ibm* dell*) );
+
+=cut
+sub find_machine_files {
+    my ( $self, @args ) = @_;
+    
+    my @fpatterns = ('*');
+
+    if (scalar(@args) > 0) {
+        @fpatterns = @args;
+    }
+
+    foreach my $dir ( @{ $self->{_config}->{dir} } ) {
+        foreach my $e ( @{ $self->{_config}->{ext} } ) {
+            my $end = q();
+
+            # useless now we're using catfile
+            # if ( -d $d && $d ne q() ) { $dir = $d . "/"; }
+
+            if ( defined $e && $e ne q() ) {
+                $end = '.' . $e;
+            }
+
+            foreach my $m ( @fpatterns ) {
+                $self->debug("Considering dir=$dir m=$m e=$end");
+
+                foreach my $candidate ( glob( File::Spec->catfile( $dir, $m) .  $end) ) {
+                $self->debug("Considering $candidate");
+
+                if ( -r $candidate ) {
+                    my ($fname, $fdir, $suffix) = fileparse($candidate, $end);
+                    $self->debug("Found $candidate : $fname");
+
+                    $self->{machines}->{$fname} = $candidate;
+                }
+                }
+            }
+        }
+    }
+
+    my $mnumber = scalar keys %{ $self->{machines} };
+    if ($mnumber == 0 ) {
+        $self->debug("No machine sar data file found");
+    }
+    return $mnumber;
+}
+
+=cut
+
 
 =head2 base_info
 
@@ -100,7 +160,7 @@ Heuristic is to look at all stated directories and all file extensions
 passed in C<new()>, and use the first filename found in the form
 C<$dir/${machine}.$ext>.
 
-  $s->base_info( qw( machine1 machine2 machine3 ) );
+  $s->base_info();
 
 =cut
 
@@ -109,54 +169,17 @@ sub base_info {
 
     my %base_info;
 
-    foreach my $machine (@args) {
-        my $file = $self->_findfile($machine);
-        if ( defined $file ) {
-            $self->debug("Loading file $file for machine $machine");
-
-            my $loader = saR::Load->new( $file );
-            $base_info{$machine} = $loader->base_info; 
-        }
-        else {
-            carp "No file found for machine $machine";
-        }
+    foreach my $machine ( keys %{$self->{machines}} ) {
+        my $loader = saR::Load->new( $self->{machines}->{$machine} );
+        $base_info{$machine} = $loader->base_info; 
     }
     return %base_info;
-}
-
-sub _findfile {
-    my ( $self, $m ) = @_;
-
-    foreach my $d ( @{ $self->{_config}->{dir} } ) {
-        foreach my $e ( @{ $self->{_config}->{ext} } ) {
-            my ( $dir, $end ) = ( q(), q() );
-            if ( -d $d && $d ne q() ) {
-                $dir = $d . "/";
-            }
-
-            if ( defined $e && $e ne q() ) {
-                $end = '.' . $e;
-            }
-
-            my $candidate = $dir . $m . $end;
-
-            $self->debug("Considering $candidate");
-
-            if ( -r $candidate ) {
-                $self->debug("Found $candidate");
-
-                return $candidate;
-            }
-        }
-    }
-
-    return;
 }
 
 sub debug {
     my ( $self, @args ) = @_;
 
-    if ( defined $self->{_config}->{debug} ) {
+    if ( defined $ENV{DEBUG} ) {
         print STDERR join( q( ), @args, "\n" );
     }
 }
