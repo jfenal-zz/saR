@@ -70,7 +70,7 @@ Dump data into csv files per index type.
 
 Only dumps those data columns in resulting files.
 
-=cut
+=back
 
 =head1 DIAGNOSTICS
 

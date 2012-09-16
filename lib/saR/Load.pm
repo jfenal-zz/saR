@@ -87,7 +87,7 @@ sub new {
     return $self;
 }
 
-=head2 open 
+=head2 open_file
 
 Open the file for read
 
