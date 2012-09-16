@@ -13,6 +13,12 @@ use saR::Load;
 
 saR - Load and feed text sar data to something able to work it out
 
+=head1 DESCRIPTION
+
+saR gets you base methods to deal with multiple sar data files from
+multiple machines, get information from those files, and eventually dump
+them.
+
 =head1 VERSION
 
 Version 0.01
@@ -109,7 +115,7 @@ Find machines files according to dirs, extensions, and file patterns.
 sub find_machine_files {
     my ( $self, @args ) = @_;
     
-    my @fpatterns = ('*');
+    my @fpatterns = qw( * );
 
     if (scalar(@args) > 0) {
         @fpatterns = @args;
@@ -123,7 +129,7 @@ sub find_machine_files {
             # if ( -d $d && $d ne q() ) { $dir = $d . "/"; }
 
             if ( defined $e && $e ne q() ) {
-                $end = '.' . $e;
+                $end = q(.) . $e;
             }
 
             foreach my $m ( @fpatterns ) {
@@ -150,9 +156,6 @@ sub find_machine_files {
     return $mnumber;
 }
 
-=cut
-
-
 =head2 base_info
 
 Load one or multiple machine files.
@@ -176,13 +179,47 @@ sub base_info {
     return %base_info;
 }
 
+
+=head2 debug
+
+Print debug information on STDERR when $ENV{DEBUG} is set.
+
+    $self->debug("Print", $this);
+
+=cut
+
 sub debug {
     my ( $self, @args ) = @_;
 
     if ( defined $ENV{DEBUG} ) {
         print STDERR join( q( ), @args, "\n" );
     }
+    return;
 }
+
+
+
+=head1 DIAGNOSTICS
+
+A C<debug()> method is provided. Not much more yet.
+
+Perl's Carp module is in use, so scripts using this library may halt.
+
+=head1 CONFIGURATION AND ENVIRONMENT
+
+Set C<DEBUG> environment variable to dump debug information.
+
+=head1 DEPENDENCIES
+
+None outside Perl's core modules.
+
+=head1 INCOMPATIBILITIES
+
+None known.
+
+=head1 BUGS AND LIMITATIONS
+
+Lots possibly.
 
 =head1 AUTHOR
 
@@ -193,8 +230,6 @@ Jérôme Fenal, C<< <jfenal at redhat.com> >>
 Please report any bugs or feature requests to C<bug-sar at rt.cpan.org>, or through
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=saR>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
-
-
 
 
 =head1 SUPPORT

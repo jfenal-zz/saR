@@ -1,18 +1,13 @@
 package saR::Load;
 
-use 5.006;
+use 5.007;
 use strict;
 use warnings;
 use Exporter qw( import );
-use English;
-our @ISA     = qw(Exporter);
-our @EXPORT  = qw(  );
-our @EXPORTS = qw( $VERSION );
-use Params::Validate;
-use Data::Dumper;
+use English qw( -no_match_vars );
 use Carp;
 use List::Util qw(max);
-use vars qw( $time_re );
+use Data::Dumper;
 
 my $time_re = qr{ \A ( \d\d [:] \d\d [:] \d\d (?:AM|PM) ) \s (.*) }imxs;
 
@@ -64,6 +59,11 @@ Load data from .txt files in one or multiple directory.
     my $loader = saR::Load->new();
     ...
 
+=head1 DESCRIPTION
+
+This module will take care of opening a sar data file, reading from it,
+whether header info or data, and closing it.
+
 =head1 EXPORT
 
 None.
@@ -93,7 +93,7 @@ Open the file for read
 
 =cut
 
-sub open {
+sub open_file {
     my ($self) = @_;
 
     my $fh;
@@ -130,7 +130,7 @@ sub base_info {
         $info{$s}->{re} = qr{^$s\s*:\s*(.*)}i;
     }
 
-    $self->open;
+    $self->open_file;
 
     my $nline = 0;
     my $fh    = $self->{fh};
@@ -138,14 +138,14 @@ sub base_info {
     while ( my $l = <$fh> ) {
         chomp $l;
         for my $s ( keys %info ) {
-            if ( $l =~ qr{$info{$s}->{re}} ) {
+            if ( $l =~ qr{$info{$s}->{re}}imxs ) {
                 $bi{ $info{$s}->{v} } = $1;
             }
         }
         last LOOP if $nline++ > 100;
     }
 
-    $self->close;
+    $self->close_file;
 
     return \%bi;
 }
@@ -196,7 +196,7 @@ sub load_data {
     my $hdata = {};
 
     # open file for read
-    $self->open();
+    $self->open_file;
 
     my $nline = 0;
     my $fh    = $self->{fh};
@@ -231,7 +231,7 @@ sub load_data {
 #
         if ( $l =~ qr{ \A Linux }imxs ) {
             @context{qw(OS kernelver hostname date arch ncpus )} = split( m{\s*}imxs, $l );
-            $self->_debug( "Changed context to $context{OS}"
+            $self->debug( "Changed context to $context{OS}"
                   . " $context{kernelver} $context{hostname}" );
 
             delete $context{index};    # removing index will help spot
@@ -241,7 +241,7 @@ sub load_data {
         #
         # Treat data block header line (empty line separated)
         #
-        if ( $l =~ qr{ \A \z }imxs ) {
+        if ( $l =~ qr{ \A \s* \z }imxs ) {
 
             # we got an empty line, get the header line
             $l = <$fh>;
@@ -249,14 +249,14 @@ sub load_data {
             my ( $time, $data );
             if ( $l =~ $time_re ) {
                 ( $time, $data ) = ( $1, $2 );
-                my @col_headers = split qr{ \s+ }, $data;
+                my @col_headers = split qr{ \s+ }imxs, $data;
 
                 # first make %col_pos for this block
                 my $c = 0;
 
                 # TODO: doesn't matter if we keep the potential index
-                my %read_col_pos = map { $_ => $c++ } @col_headers;
-                $self->_debug( 'col pos : ' . Dumper( \%read_col_pos ) );
+                %read_col_pos = map { $_ => $c++ } @col_headers;
+                $self->debug( 'col pos : ' . Dumper( \%read_col_pos ) );
 
                 # then add possible new cols to data file global
                 # %data_cols, get the current context index
@@ -270,21 +270,24 @@ sub load_data {
         # Regexp should address both 12 AM/PM & 24 hours time format in sar
         if ( $l =~ $time_re ) {
             my ( $time, $data ) = ( $1, $2 );
-            my @cols = split qr{ \s+ }, $data;
+            my @cols = split qr{ \s+ }mxs, $data;
 
         }
 
         # data line
     }
+
+    $self->close_file;
+    return $hdata;
 }
 
-=head2 close
+=head2 close_file
 
 Close file.
 
 =cut
 
-sub close {
+sub close_file {
     my ($self) = @_;
 
     if ( defined( $self->{fh} ) ) {
@@ -295,19 +298,46 @@ sub close {
 
 }
 
-=head2 _debug
+=head2 debug
 
 Print debug info.
 
 =cut
 
-sub _debug {
+sub debug {
     my ( $self, @args ) = @_;
 
     if ( defined $ENV{DEBUG} ) {
         print STDERR join( q( ), @args, "\n" );
     }
+
+    return;
 }
+
+=head1 DIAGNOSTICS
+
+A C<debug()> method is provided. Not much more yet.
+
+Perl's Carp module is in use, so scripts using this library may halt.
+
+=head1 CONFIGURATION AND ENVIRONMENT
+
+Set C<DEBUG> environment variable to dump debug information.
+
+=head1 DEPENDENCIES
+
+None outside Perl's core modules.
+
+C<List::Util> is used, in Core starting with Perl 5.7.3.
+
+=head1 INCOMPATIBILITIES
+
+None known.
+
+=head1 BUGS AND LIMITATIONS
+
+Lots possibly.
+
 
 =head1 AUTHOR
 

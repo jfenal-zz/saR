@@ -10,7 +10,7 @@ use Data::Dumper;
 
 use Getopt::Long qw(:config bundling);
 
-use vars qw( $s );
+our $VERSION='0.01';
 
 =head1 NAME
 
@@ -19,6 +19,12 @@ saRdump - Dump data in a usable form from sar text files
 =head1 USAGE
 
   saRdump [-d dir1,dir2] [-e txt] -H -C -D [-c "proc/s,INTR:*,CPU:%user,CPU:%sys"] [ machine1 ... ]
+
+=head1 DESCRIPTION
+
+saRdump will enable you to load sar data in multiple text files from
+multiple machines, and dump them in (hopefully) usable format for
+statistics.
 
 =head1 REQUIRED ARGUMENTS
 
@@ -66,6 +72,45 @@ Only dumps those data columns in resulting files.
 
 =cut
 
+=head1 DIAGNOSTICS
+
+Please tell me when it crashes. Still in development.
+
+=head1 EXIT STATUS
+
+Not defined, beware.
+
+=head1 CONFIGURATION
+
+Only through CLI parameters & options.
+
+=head1 DEPENDENCIES
+
+saRdump relies on Perl modules C<saR> & C<saR::Load> and some standard
+modules.
+
+=head1 INCOMPATIBILITIES
+
+Only lightly tested with Linux sysstat(1) output.
+
+=head1 BUGS AND LIMITATIONS
+
+Lots.
+
+=head1 AUTHOR 
+
+Jérôme Fenal, C<< <jfenal at redhat.com> >>
+
+=head1 LICENSE AND COPYRIGHT
+
+Copyright 2012 Jerome Fenal, all rights reserved.
+
+This module is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+
+
 # 
 # analyze options
 #
@@ -73,8 +118,8 @@ my ($extensions, $dirs, $cols);
 my ($dump_info, $dump_data, $dump_headers) = (0, 0, 0);
 # Set defaults
 $extensions = 'txt';
-$dirs = '.';
-$cols = '';
+$dirs = q(.);
+$cols = q();
 
 my $result = GetOptions(
     'e|extensions=s' => \$extensions,
@@ -89,15 +134,15 @@ my $result = GetOptions(
     -verbose => 99,
   );
 
-my @dirs = split( qr{,}, $dirs );
+my @dirs = split qr{,}imxs, $dirs;
 # expand globs in dirs
 @dirs = map { glob( $_ ) } @dirs;
-my @exts = split qr{,}, $extensions;
+my @exts = split qr{,}imxs, $extensions;
 
 my $s = saR->new( dir => \@dirs, ext => \@exts);
 
 if (defined $ENV{DEBUG} ) {
-    print Dumper $s;
+    print STDERR Dumper($s);
 }
 
 
@@ -115,7 +160,7 @@ if ($dump_info) {
     # dump it.
     foreach my $m ( keys %base_info ) {
         my %bi = %{ $base_info{$m} };
-        print join ';', $m, @bi{@info};
+        print join q(;), $m, @bi{@info};
 
         print "\n";
     }
