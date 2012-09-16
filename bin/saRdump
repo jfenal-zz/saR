@@ -145,15 +145,12 @@ if (defined $ENV{DEBUG} ) {
     print STDERR Dumper($s);
 }
 
-
 my @info = qw(hwmodel cpumodel cpus cores ram oslevel san);
 
-print STDERR "Starting main\n";
 # 
 # Dump base info
 #
 if ($dump_info) {
-    print STDERR "Base info\n";
     # get base info
     my %base_info = $s->base_info();
 
@@ -166,5 +163,20 @@ if ($dump_info) {
     }
 }
 
+if ($dump_headers) {
+    print STDERR '-' x 60, "\n";
+
+    my $headers = $s->headers();
+
+    foreach my $index ( sort keys %{$headers} ) {
+        print "$index:\n";
+        foreach
+          my $col ( sort { $headers->{$index}->{$a} <=> $headers->{$index}->{$b} } keys %{$headers->{$index}} )
+        {
+            print "    $col: $headers->{$index}->{$col}\n";
+
+        }
+    }
+}
 
 

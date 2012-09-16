@@ -9,7 +9,7 @@ use Carp;
 use List::Util qw(max);
 use Data::Dumper;
 
-my $time_re = qr{ \A ( \d\d [:] \d\d [:] \d\d (?:AM|PM) ) \s (.*) }imxs;
+my $time_re = qr{ \A ( \d\d [:] \d\d [:] \d\d (?:\s*AM|\s*PM)? ) \s* (.*) }imxs;
 
 =head1 NAME
 
@@ -79,10 +79,9 @@ sub new {
 
     my $self = {};
     bless $self, $class;
-    $self->{file}      = $file;
+    $self->{file} = $file;
 
-    # FIXME: this one should be global to a saR session accross multiple files, not saR::Load
-    $self->{data_cols} = {};      # empty data cols for the current file
+# FIXME: this one should be global to a saR session accross multiple files, not saR::Load
 
     return $self;
 }
@@ -150,19 +149,25 @@ sub base_info {
     return \%bi;
 }
 
-=head2 _feed_data_cols
+=head2 feed_data_cols
     
-    _feed_data_cols( \%data_cols, @cols );
+    $s->feed_data_cols( \%data_cols, @cols );
 
-    Not a method, just a function.
+Helper method to keep track of columns headers overall all files.
+
+C<%data_cols> must be kept maintained accross all files in a session,
+and usually is maintained in the calling C<saR> object.
+
 =cut
 
-sub _feed_data_cols {
-    my ( $data_cols, @cols ) = @_;
+sub feed_data_cols {
+    my ( $self, $data_cols, @cols ) = @_;
 
     # do we have an index
     my $first = $cols[0];
     my $index = 'noidx';
+    $data_cols = $$data_cols;   # get hashref from ref
+    $self->debug("data_cols:", $data_cols);
 
     # an index column are spotted as all uppercase
     if ( $first eq uc($first) ) {
@@ -170,9 +175,17 @@ sub _feed_data_cols {
         # if one present, remove it from the list of real data cols
         $index = shift @cols;
     }
+    $self->debug("index=$index, cols:", @cols);
 
+    # take care of existence of first level in the hash (index)
+    if ( !defined( $data_cols->{$index} ) ) {
+        $data_cols->{$index} = {};
+    }
+
+    # loop through columns
     foreach my $c (@cols) {
         if ( !defined( $data_cols->{$index}->{$c} ) ) {
+            $self->debug("new column $c: index=$index");
 
             # we have a new column not already registered
             # find max col index for it
@@ -186,12 +199,40 @@ sub _feed_data_cols {
 
 =head2 load_data
 
-  $hdata = $loader->load_data()
+Load data from the current file in the loader.
+
+The optional argument specifies whether to actually load the data or
+not. If not, only headers from data blocks will be loaded and kept.
+
+  $hdata = $loader->load_data( \%data_cols );    # load data
+  $hdata = $loader->load_data( \%data_cols, 0 );   # load only headers
 
 =cut
 
 sub load_data {
-    my ($self) = @_;
+    my ( $self, @args ) = @_;
+
+    my $data_cols = shift @args;
+
+    $self->debug( "data_cols=", Dumper($data_cols) );
+
+    # %data_cols = {
+    #   noidx => { proc/s => 0, cswch/s => 1, pswpin/s => 2, ... },
+    #   CPU => { %user => 0, %nice => 1, %system => 2, ... },
+    #   INTR => { sum => 0 },
+    #   IFACE => { rxpck/s => 0, txpck/s => 1, rxbyt/s => 2, ... },
+    #   DEV => { tps => 0, rd_sec/s => 1, wr_sec/s => 2, ... },
+    #   };
+    #
+    # $data_cols will be used for rendering data in the output and
+    # has to be maintained globally for all sar files to read.
+    #
+
+    my $doload = 1;
+
+    if ( defined $args[0] ) {
+        $doload = shift @args;
+    }
 
     my $hdata = {};
 
@@ -206,22 +247,6 @@ sub load_data {
     my %read_col_pos;    # defined when finding a new data header line
                          # %col_pos = ( proc/s => 1, ...);
 
-    #
-    # data cols, as we add all data in one row per data type
-    #
-    my $data_cols = $self->{data_cols};
-
-    # %data_cols = {
-    #   noidx => { proc/s => 0, cswch/s => 1, pswpin/s => 2, ... },
-    #   CPU => { %user => 0, %nice => 1, %system => 2, ... },
-    #   INTR => { sum => 0 },
-    #   IFACE => { rxpck/s => 0, txpck/s => 1, rxbyt/s => 2, ... },
-    #   DEV => { tps => 0, rd_sec/s => 1, wr_sec/s => 2, ... },
-    #   };
-    #
-    # $data_cols will be used for rendering data in the output
-    #
-
     while ( my $l = <$fh> ) {
         chomp $l;
 
@@ -230,9 +255,14 @@ sub load_data {
 # qr[ \A (Linux) \s (.*?) \s [(] (.*?) [)] \s+ ( \d\d / \d\d / \d\d ) \s+ (.*?)* \s+ (?: [(] (\d+?) CPU [)])* ]imxs
 #
         if ( $l =~ qr{ \A Linux }imxs ) {
-            @context{qw(OS kernelver hostname date arch ncpus )} = split( m{\s*}imxs, $l );
-            $self->debug( "Changed context to $context{OS}"
-                  . " $context{kernelver} $context{hostname}" );
+            @context{qw(OS kernelver hostname date arch ncpus )} =
+              split( m{\s+}imxs, $l );
+
+            # remove () in hostname
+            $context{hostname} =~ s/[()]//g;
+
+            $self->debug( "Changed context to ",
+                @context{qw(OS kernelver hostname date)} );
 
             delete $context{index};    # removing index will help spot
                                        # flaws in header/data reading logic
@@ -241,26 +271,29 @@ sub load_data {
         #
         # Treat data block header line (empty line separated)
         #
-        if ( $l =~ qr{ \A \s* \z }imxs ) {
+        if ( $l =~ m/^\s*$/ ) {
+            $self->debug("Entering new data block following an empty line");
 
             # we got an empty line, get the header line
             $l = <$fh>;
-
+    
             my ( $time, $data );
             if ( $l =~ $time_re ) {
                 ( $time, $data ) = ( $1, $2 );
                 my @col_headers = split qr{ \s+ }imxs, $data;
+                $self->debug("time=$time, col headers: ", @col_headers);
 
                 # first make %col_pos for this block
                 my $c = 0;
 
                 # TODO: doesn't matter if we keep the potential index
                 %read_col_pos = map { $_ => $c++ } @col_headers;
-                $self->debug( 'col pos : ' . Dumper( \%read_col_pos ) );
+                $self->debug( '%read_col_pos : ' . Dumper( \%read_col_pos ) );
 
                 # then add possible new cols to data file global
                 # %data_cols, get the current context index
-                $context{index} = _feed_data_cols( $data_cols, @col_headers );
+                $context{index} =
+                  $self->feed_data_cols( $data_cols, @col_headers );
             }
         }
 
@@ -268,10 +301,13 @@ sub load_data {
         # Treat data line
         #
         # Regexp should address both 12 AM/PM & 24 hours time format in sar
-        if ( $l =~ $time_re ) {
+        if ( $doload && $l =~ $time_re ) {
             my ( $time, $data ) = ( $1, $2 );
             my @cols = split qr{ \s+ }mxs, $data;
 
+            $self->debug("Splitted new data line: ", @cols);
+
+            # do something with this data. Later.
         }
 
         # data line

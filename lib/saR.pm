@@ -163,7 +163,7 @@ Heuristic is to look at all stated directories and all file extensions
 passed in C<new()>, and use the first filename found in the form
 C<$dir/${machine}.$ext>.
 
-  $s->base_info();
+  my %base_info = $s->base_info();
 
 =cut
 
@@ -177,6 +177,38 @@ sub base_info {
         $base_info{$machine} = $loader->base_info; 
     }
     return %base_info;
+}
+
+=head2 headers
+
+Read all files for headers, and returns a reference to a hash of hashes
+containing the data header information.
+
+    my %headers = %{ $s->headers() };
+
+B<Caveat:> This data is also loaded during the C<load_data()> invocation.
+If you need it along with the actual data, be sure to invoke the
+C<load_data()> method first to avoid reading the files twice.
+
+=cut
+
+sub headers {
+    my ( $self, @args ) = @_;
+
+    my %base_info;
+
+    # if the data is not already loaded, load it without the data.
+
+    if ( ! defined $self->{data_cols} ) {
+        $self->{data_cols} = {};
+    }
+
+    foreach my $machine ( keys %{$self->{machines}} ) {
+        my $loader = saR::Load->new( $self->{machines}->{$machine} );
+        $loader->load_data( \$self->{data_cols}, 0);
+    }
+
+    return $self->{data_cols};
 }
 
 
