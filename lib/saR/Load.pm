@@ -5,13 +5,16 @@ use strict;
 use warnings;
 use Exporter qw( import );
 use English;
-our @ISA = qw(Exporter);
-our @EXPORT = qw(  );
+our @ISA     = qw(Exporter);
+our @EXPORT  = qw(  );
 our @EXPORTS = qw( $VERSION );
 use Params::Validate;
 use Data::Dumper;
 use Carp;
+use List::Util qw(max);
+use vars qw( $time_re );
 
+my $time_re = qr{ \A ( \d\d [:] \d\d [:] \d\d (?:AM|PM) ) \s (.*) }imxs;
 
 =head1 NAME
 
@@ -24,6 +27,7 @@ Version 0.01
 =cut
 
 our $VERSION = '0.01';
+
 =pod
 
 my $data = (
@@ -51,20 +55,18 @@ my $data = (
 );
 =cut
 
-
-
 =head1 SYNOPSIS
 
 Load data from .txt files in one or multiple directory.
 
     use saR::Load;
 
-    my $foo = saR::Load->new();
+    my $loader = saR::Load->new();
     ...
 
 =head1 EXPORT
 
-TODO: not yet.
+None.
 
 =head1 SUBROUTINES/METHODS
 
@@ -73,11 +75,14 @@ TODO: not yet.
 =cut
 
 sub new {
-    my ($class, $file) = @_;
+    my ( $class, $file ) = @_;
 
     my $self = {};
     bless $self, $class;
-    $self->{file} = $file;
+    $self->{file}      = $file;
+
+    # FIXME: this one should be global to a saR session accross multiple files, not saR::Load
+    $self->{data_cols} = {};      # empty data cols for the current file
 
     return $self;
 }
@@ -93,7 +98,8 @@ sub open {
 
     my $fh;
     if ( !open $fh, '<', $self->{file} ) {
-        croak "Couldn't open file $self->{file} $ERRNO\n";    }
+        croak "Couldn't open file $self->{file} $ERRNO\n";
+    }
     $self->{fh} = $fh;
 
     return $self;
@@ -126,22 +132,150 @@ sub base_info {
 
     $self->open;
 
-    my $nline=0;
-    my $fh = $self->{fh};
-    LOOP:
+    my $nline = 0;
+    my $fh    = $self->{fh};
+  LOOP:
     while ( my $l = <$fh> ) {
         chomp $l;
         for my $s ( keys %info ) {
             if ( $l =~ qr{$info{$s}->{re}} ) {
-                $bi{$info{$s}->{v}} = $1;
+                $bi{ $info{$s}->{v} } = $1;
             }
         }
         last LOOP if $nline++ > 100;
     }
-    
+
     $self->close;
 
     return \%bi;
+}
+
+=head2 _feed_data_cols
+    
+    _feed_data_cols( \%data_cols, @cols );
+
+    Not a method, just a function.
+=cut
+
+sub _feed_data_cols {
+    my ( $data_cols, @cols ) = @_;
+
+    # do we have an index
+    my $first = $cols[0];
+    my $index = 'noidx';
+
+    # an index column are spotted as all uppercase
+    if ( $first eq uc($first) ) {
+
+        # if one present, remove it from the list of real data cols
+        $index = shift @cols;
+    }
+
+    foreach my $c (@cols) {
+        if ( !defined( $data_cols->{$index}->{$c} ) ) {
+
+            # we have a new column not already registered
+            # find max col index for it
+            my $next = 1 + max( values %{ $data_cols->{$index} } );
+            $data_cols->{$index}->{$c} = $next;
+        }
+    }
+
+    return $index;
+}
+
+=head2 load_data
+
+  $hdata = $loader->load_data()
+
+=cut
+
+sub load_data {
+    my ($self) = @_;
+
+    my $hdata = {};
+
+    # open file for read
+    $self->open();
+
+    my $nline = 0;
+    my $fh    = $self->{fh};
+  LOOP:
+
+    my %context;         # context : OS kernelver hostname date [ arch ncpus ]
+    my %read_col_pos;    # defined when finding a new data header line
+                         # %col_pos = ( proc/s => 1, ...);
+
+    #
+    # data cols, as we add all data in one row per data type
+    #
+    my $data_cols = $self->{data_cols};
+
+    # %data_cols = {
+    #   noidx => { proc/s => 0, cswch/s => 1, pswpin/s => 2, ... },
+    #   CPU => { %user => 0, %nice => 1, %system => 2, ... },
+    #   INTR => { sum => 0 },
+    #   IFACE => { rxpck/s => 0, txpck/s => 1, rxbyt/s => 2, ... },
+    #   DEV => { tps => 0, rd_sec/s => 1, wr_sec/s => 2, ... },
+    #   };
+    #
+    # $data_cols will be used for rendering data in the output
+    #
+
+    while ( my $l = <$fh> ) {
+        chomp $l;
+
+#
+# We have a new day header
+# qr[ \A (Linux) \s (.*?) \s [(] (.*?) [)] \s+ ( \d\d / \d\d / \d\d ) \s+ (.*?)* \s+ (?: [(] (\d+?) CPU [)])* ]imxs
+#
+        if ( $l =~ qr{ \A Linux }imxs ) {
+            @context{qw(OS kernelver hostname date arch ncpus )} = split( m{\s*}imxs, $l );
+            $self->_debug( "Changed context to $context{OS}"
+                  . " $context{kernelver} $context{hostname}" );
+
+            delete $context{index};    # removing index will help spot
+                                       # flaws in header/data reading logic
+        }    # header line
+
+        #
+        # Treat data block header line (empty line separated)
+        #
+        if ( $l =~ qr{ \A \z }imxs ) {
+
+            # we got an empty line, get the header line
+            $l = <$fh>;
+
+            my ( $time, $data );
+            if ( $l =~ $time_re ) {
+                ( $time, $data ) = ( $1, $2 );
+                my @col_headers = split qr{ \s+ }, $data;
+
+                # first make %col_pos for this block
+                my $c = 0;
+
+                # TODO: doesn't matter if we keep the potential index
+                my %read_col_pos = map { $_ => $c++ } @col_headers;
+                $self->_debug( 'col pos : ' . Dumper( \%read_col_pos ) );
+
+                # then add possible new cols to data file global
+                # %data_cols, get the current context index
+                $context{index} = _feed_data_cols( $data_cols, @col_headers );
+            }
+        }
+
+        #
+        # Treat data line
+        #
+        # Regexp should address both 12 AM/PM & 24 hours time format in sar
+        if ( $l =~ $time_re ) {
+            my ( $time, $data ) = ( $1, $2 );
+            my @cols = split qr{ \s+ }, $data;
+
+        }
+
+        # data line
+    }
 }
 
 =head2 close
@@ -150,19 +284,30 @@ Close file.
 
 =cut
 
-
 sub close {
     my ($self) = @_;
 
     if ( defined( $self->{fh} ) ) {
-        if ( ! close($self->{fh}) ) {
+        if ( !close( $self->{fh} ) ) {
             croak "Couldn't close file $self->{file}: $ERRNO\n";
         }
     }
 
 }
 
+=head2 _debug
 
+Print debug info.
+
+=cut
+
+sub _debug {
+    my ( $self, @args ) = @_;
+
+    if ( defined $ENV{DEBUG} ) {
+        print STDERR join( q( ), @args, "\n" );
+    }
+}
 
 =head1 AUTHOR
 
@@ -223,4 +368,4 @@ See http://dev.perl.org/licenses/ for more information.
 
 =cut
 
-1; # End of saR::Load
+1;    # End of saR::Load
