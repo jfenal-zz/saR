@@ -203,9 +203,13 @@ sub headers {
         $self->{data_cols} = {};
     }
 
+    my $c=1;
+    my $total = scalar(keys %{$self->{machines}});
     foreach my $machine ( keys %{$self->{machines}} ) {
+        print STDERR "Loading header data for machine $machine ($c/$total)\n";
         my $loader = saR::Load->new( $self->{machines}->{$machine} );
         $loader->load_data( \$self->{data_cols}, 0);
+        $c++;
     }
 
     return $self->{data_cols};
