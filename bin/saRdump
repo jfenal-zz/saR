@@ -164,8 +164,6 @@ if ($dump_info) {
 }
 
 if ($dump_headers) {
-    print STDERR '-' x 60, "\n";
-
     my $headers = $s->headers();
 
     foreach my $index ( sort keys %{$headers} ) {
