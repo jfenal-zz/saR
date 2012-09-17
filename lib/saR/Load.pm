@@ -167,6 +167,7 @@ sub feed_data_cols {
     my $first = $cols[0];
     my $index = 'noidx';
     $data_cols = $$data_cols;   # get hashref from ref
+
     $self->debug("data_cols:", $data_cols);
 
     # an index column are spotted as all uppercase
@@ -189,7 +190,11 @@ sub feed_data_cols {
 
             # we have a new column not already registered
             # find max col index for it
-            my $next = 1 + max( values %{ $data_cols->{$index} } );
+            my $themax = max( values %{ $data_cols->{$index} } );
+            my $next = 0;
+            if (defined $themax) {
+                $next = 1 + $themax;
+            }
             $data_cols->{$index}->{$c} = $next;
         }
     }
