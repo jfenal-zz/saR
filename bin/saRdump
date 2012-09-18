@@ -163,6 +163,16 @@ if ($dump_info) {
     }
 }
 
+if ($dump_data) {
+    my $data = $s->data();
+
+    # data
+    # timestamp machine noidx all% %metrics ...
+    # timestamp machine INDEX:idx all% %metrics ...
+
+}
+
+
 if ($dump_headers) {
     my $headers = $s->headers();
 
@@ -176,5 +186,4 @@ if ($dump_headers) {
         }
     }
 }
-
 
