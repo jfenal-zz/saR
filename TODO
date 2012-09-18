@@ -1,0 +1,5 @@
+Ideas to borrown from pGraph:
+- define timezone for specific machines
+- define rules of conversion for CPU power, e.g. this processor performs
+  20% faster than this one.
+
