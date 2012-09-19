@@ -3,3 +3,23 @@ Ideas to borrown from pGraph:
 - define rules of conversion for CPU power, e.g. this processor performs
   20% faster than this one.
 
+
+Ideas:
+
+Instead of storing data in columns, which seems to be difficult and more
+than a hammer on memory manipulation (close to 50% at data load time),
+store in lines, e.g. each metric would have:
+- a start time
+- a period (computed and/or verified each time, croaking if too much)
+- push data in the same table for each metric
+
+Advantages:
+- ease restitution if filtering for specific metrics.
+- remove the need to precompute column index, as each metric would have
+  its own table.
+- less storage needed (no timestamps)
+- possibly closer to R native timeSeries (ts) concept
+
+Inconvenients:
+- not the same baseline for all machines...
+
