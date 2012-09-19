@@ -163,32 +163,22 @@ and usually is maintained in the calling C<saR> object.
 =cut
 
 sub feed_data_cols {
-    my ( $self, $data_cols, @cols ) = @_;
+    my ( $self, $data_cols, $index, @cols ) = @_;
 
     # do we have an index
     my $first = $cols[0];
-    my $index = 'noidx';
-    $data_cols = $$data_cols;    # get hashref from ref
 
-    $self->debug( "data_cols:", $data_cols );
-
-    # an index column are spotted as all uppercase
-    if ( $first eq uc($first) ) {
-
-        # if one present, remove it from the list of real data cols
-        $index = shift @cols;
-    }
-    $self->debug( "index=$index, cols:", @cols );
+    $self->debug(2, "data_cols:", $data_cols );
 
     # take care of existence of first level in the hash (index)
-    if ( !defined( $data_cols->{$index} ) ) {
-        $data_cols->{$index} = {};
-    }
+    #if ( !defined( $data_cols->{$index} ) ) {
+    #    $data_cols->{$index} = {};
+    #}
 
     # loop through columns
     foreach my $c (@cols) {
         if ( !defined( $data_cols->{$index}->{$c} ) ) {
-            $self->debug("new column $c: index=$index");
+            $self->debug(1, "new column $c: index=$index");
 
             # we have a new column not already registered
             # find max col index for it
@@ -201,7 +191,7 @@ sub feed_data_cols {
         }
     }
 
-    return $index;
+    return;
 }
 
 =head2 cols_to_index
@@ -216,7 +206,6 @@ columns.
 sub cols_to_index {
     my ( $self, $ctxidx, $data_cols, @cols ) = @_;
 
-    $data_cols = $$data_cols;
     my @c2i = map { $data_cols->{$ctxidx}->{$_} } @cols;
 
     return @c2i;
@@ -244,10 +233,11 @@ sub load_data {
 
     my ( $data_cols, $hdata ) = @args;
 
-    $self->debug( "data_cols=", Dumper($data_cols) );
+    $self->debug(2, "data_cols=", Dumper($data_cols) );
+    $self->debug(5, "hdata=", Dumper($hdata) );
 
     # %data_cols = {
-    #   noidx => { proc/s => 0, cswch/s => 1, pswpin/s => 2, ... },
+    #   NOIDX => { proc/s => 0, cswch/s => 1, pswpin/s => 2, ... },
     #   CPU => { %user => 0, %nice => 1, %system => 2, ... },
     #   INTR => { sum => 0 },
     #   IFACE => { rxpck/s => 0, txpck/s => 1, rxbyt/s => 2, ... },
@@ -261,11 +251,14 @@ sub load_data {
     # flag: should we load data or not?
     my $doload = 0;
 
+    $data_cols = $$data_cols;   # get hashref from ref
+
     # load actual data (e.g. not only headers) if we have a hash ref to
     # store data passed as an argument
     if ( defined $hdata ) {
         $doload = 1;
-        $self->debug( "data=", Dumper($hdata) );
+        $hdata=$$hdata;         # get hashref from ref
+        $self->debug(1, "Initial data=", Dumper($hdata) );
     }
 
     # open file for read
@@ -273,7 +266,6 @@ sub load_data {
 
     my $nline = 0;
     my $fh    = $self->{fh};
-  LOOP:
 
     my %context;         # context : OS kernelver hostname date [ arch ncpus ]
     my %read_col_pos;    # defined when finding a new data header line
@@ -282,6 +274,7 @@ sub load_data {
     my @c2i;             # could also be named as data_col_pos
                          # addresses data in the columns in data output
 
+  LOOP:
     while ( my $l = <$fh> ) {
         chomp $l;
 
@@ -296,10 +289,11 @@ sub load_data {
             # remove () in hostname
             $context{hostname} =~ s/[()]//g;
 
-            $self->debug( "Changed context to ",
+            $self->debug(1, "Changed context to ",
                 @context{qw(OS kernelver hostname date)} );
 
-            delete $context{index};    # removing index will help spot
+            $context{index} = 'NOIDX'; # defaumlt value.
+               # delete $context{index};    # TODO: removing index will help spot
                                        # flaws in header/data reading logic
         }    # header line
 
@@ -307,37 +301,50 @@ sub load_data {
         # Treat data block header line (empty line separated)
         #
         if ( $l =~ m/^\s*$/ ) {
-            $self->debug("Entering new data block following an empty line");
+            $self->debug(1, "Entering new data block following an empty line");
 
             # we got an empty line, get the header line
             $l = <$fh>;
+            chomp $l;
+
+            $self->debug(1, "Header line: $l");
 
             my ( $time, $data );
 
             if ( $l =~ $time_re ) {
                 ( $time, $data ) = ( $1, $2 );
                 my @col_headers = split qr{ \s+ }imxs, $data;
-                $self->debug( "time=$time, col headers: ", @col_headers );
+                $self->debug(2, "time=$time, col headers: ", @col_headers );
 
                 # first make %col_pos for this block
                 my $c = 0;
 
                 # TODO: doesn't matter if we keep the potential index,
                 # TBD with experience...
+
+                # Do we have an index ?
+                if ($col_headers[0] eq uc($col_headers[0])) {
+                    $context{index} = $col_headers[0];
+                    shift @col_headers;
+                }
+                else {
+                    $context{index} = 'NOIDX';
+                }
+
                 %read_col_pos = map { $_ => $c++ } @col_headers;
-                $self->debug( '%read_col_pos : ' . Dumper( \%read_col_pos ) );
+                $self->debug(3, '%read_col_pos : ' . Dumper( \%read_col_pos ) );
 
                 # then add possible new cols to data file global
                 # %data_cols, get the current context index
-                $context{index} =
-                  $self->feed_data_cols( $data_cols, @col_headers );
+                $self->feed_data_cols( $data_cols, $context{index}, @col_headers );
 
                 # then get the new indexes for data in output tables
                 # [ 1 .. nr_of_metrics ]
-                @c2i =
-                  $self->cols_to_index( $context{index}, $data_cols,
-                    @col_headers );
+                @c2i = $self->cols_to_index( $context{index}, $data_cols, @col_headers );
             }
+
+            # do not try to analyze data which are not there
+            next LOOP;
         }
 
         #
@@ -347,15 +354,16 @@ sub load_data {
         if ( $doload && $l =~ $time_re ) {
             my ( $time, $data ) = ( $1, $2 );
             my @data = split qr{ \s+ }mxs, $data;
-
-            $self->debug( "Splitted new data line: ", @data );
+            $self->debug(2, "Splitted new data line: ", Dumper \@data );
 
             # if in the context, we are supposed to have an index, set
-            # it, otherwise, use 'noidx'
-            my $index = 'noidx';
-            if ( $context{index} ne 'noidx' ) {
+            # it, otherwise, use 'NOIDX'
+            my $index = 'NOIDX';
+            if ( $context{index} ne 'NOIDX' ) {
                 $index = shift @data;
             }
+            $self->debug(2, "index=$index");
+            $self->debug(2, "New data line without index: ", Dumper \@data );
 
             # compute time in secs from epoch
             # TODO: define a timezone per machine and use it here.
@@ -368,7 +376,13 @@ sub load_data {
             my $hostname = $context{hostname};
 
             # feed metrics loaded in the current line into
-            $hdata->{$hostname}->{$index}->{$tstamp}[@c2i] = @data;
+            $self->debug(5, "hdata=", Dumper $hdata);
+            $self->debug(2, "hdata: $hdata (", ref $hdata , ")");
+            $self->debug(5, "c2i=", Dumper \@c2i);
+            # foreach my $i (@c2i) { $hdata->{$hostname}->{$index}->{$tstamp}->[$i] = shift @data; }
+            $hdata->{$hostname}->{$index}->{$tstamp}->[@c2i] = @data;
+            $self->debug(5, "hdata=", Dumper $hdata);
+
         }
     }
 
@@ -400,9 +414,9 @@ Print debug info.
 =cut
 
 sub debug {
-    my ( $self, @args ) = @_;
+    my ( $self, $level, @args ) = @_;
 
-    if ( defined $ENV{DEBUG} ) {
+    if ( defined $ENV{DEBUG} && $ENV{DEBUG} >= $level) {
         print STDERR join( q( ), @args, "\n" );
     }
 
