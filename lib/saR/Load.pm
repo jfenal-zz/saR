@@ -92,6 +92,8 @@ sub new {
 
 Open the file for read
 
+Returns the size of the file.
+
 =cut
 
 sub open_file {
@@ -103,7 +105,14 @@ sub open_file {
     }
     $self->{fh} = $fh;
 
-    return $self;
+    my $size;
+
+    seek $fh, 0, POSIX::SEEK_END;
+    $size = tell $fh;
+    seek $fh, 0, POSIX::SEEK_SET;
+    
+
+    return $size;
 }
 
 =head2 base_info
@@ -262,7 +271,7 @@ sub load_data {
     }
 
     # open file for read
-    $self->open_file;
+    my $size = $self->open_file;
 
     my $nline = 0;
     my $fh    = $self->{fh};
@@ -274,9 +283,18 @@ sub load_data {
     my @c2i;             # could also be named as data_col_pos
                          # addresses data in the columns in data output
 
+    my $position_in_file;
+    my $advance_incr = $size / 20;
+    my $current_advance=0;
   LOOP:
     while ( my $l = <$fh> ) {
         chomp $l;
+        # Print advance in file read.
+        $position_in_file = tell $fh;
+        if ($position_in_file > $current_advance) {
+            print STDERR "File: $self->{file} " . int(100 * $position_in_file / $size) . "%\n";
+            $current_advance += $advance_incr;
+        }
 
 #
 # We have a new day header
