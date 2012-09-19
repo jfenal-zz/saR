@@ -284,7 +284,7 @@ sub load_data {
                          # addresses data in the columns in data output
 
     my $position_in_file;
-    my $advance_incr = $size / 20;
+    my $advance_incr = $size / 200;
     my $current_advance=0;
   LOOP:
     while ( my $l = <$fh> ) {
@@ -292,9 +292,10 @@ sub load_data {
         # Print advance in file read.
         $position_in_file = tell $fh;
         if ($position_in_file > $current_advance) {
-            print STDERR "File: $self->{file} " . int(100 * $position_in_file / $size) . "%\n";
+            print STDERR "=== File: $self->{file} " . int(100 * $position_in_file / $size) . "%\n";
             $current_advance += $advance_incr;
         }
+        else { print STDERR '.'; }
 
 #
 # We have a new day header
@@ -398,7 +399,8 @@ sub load_data {
             $self->debug(2, "hdata: $hdata (", ref $hdata , ")");
             $self->debug(5, "c2i=", Dumper \@c2i);
             # foreach my $i (@c2i) { $hdata->{$hostname}->{$index}->{$tstamp}->[$i] = shift @data; }
-            $hdata->{$hostname}->{$index}->{$tstamp}->[@c2i] = @data;
+            #$hdata->{$hostname}->{$index}->{$tstamp}->[@c2i] = @data;
+            foreach my $i (@c2i) { $hdata->{$hostname}->{$index}->{$tstamp}->{$i} = shift @data; }
             $self->debug(5, "hdata=", Dumper $hdata);
 
         }
