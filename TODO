@@ -23,3 +23,26 @@ Advantages:
 Inconvenients:
 - not the same baseline for all machines...
 
+That would look like this:
+
+$hdata->{$hostname}->{$index}->{$metric}->{start} = $start_time;
+$hdata->{$hostname}->{$index}->{$metric}->{period} = $period;
+$context{data_cols} = [ @data_cols ];
+...
+while (<>) {
+    foreach my $d ( @data ) {
+        push @{$hdata->{$hostname}->{$index}->{$metric}->{data}}, $d;
+    }
+
+    # could be done only once either in inner data read loop, or at
+    # start of everything else than data
+    $hdata->{$hostname}->{$index}->{$metric}->{last} = $tstamp;
+}
+
+Not sure we can have a global notation.
+
+
+Question: how do we handle data blocks on the same metric, which have
+multiple days ?
+--> store current last tstamp for each metric
+
