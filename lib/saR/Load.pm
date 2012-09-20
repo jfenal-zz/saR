@@ -338,9 +338,6 @@ sub load_data {
                 # first make %col_pos for this block
                 my $c = 0;
 
-                # TODO: doesn't matter if we keep the potential index,
-                # TBD with experience...
-
                 # Do we have an index ?
                 if ($col_headers[0] eq uc($col_headers[0])) {
                     $context{index} = $col_headers[0];
@@ -349,6 +346,9 @@ sub load_data {
                 else {
                     $context{index} = 'NOIDX';
                 }
+
+                # reset data period to 0
+                $context{period} = 0;
 
                 %read_col_pos = map { $_ => $c++ } @col_headers;
                 $self->debug(3, '%read_col_pos : ' . Dumper( \%read_col_pos ) );
