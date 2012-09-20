@@ -1,3 +1,13 @@
 Build
 blib/
 _build/
+cover_db
+*.txt
+*.csv
+*.ods
+*.ERR
+*~
+*.bak
+*.swp
+*.patch
+*.old
