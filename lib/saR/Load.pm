@@ -79,11 +79,12 @@ None.
 =cut
 
 sub new {
-    my ( $class, $file ) = @_;
+    my ( $class, $file, $db ) = @_;
 
     my $self = {};
     bless $self, $class;
     $self->{file} = $file;
+    $self->{db} = $db;
 
     return $self;
 }
@@ -172,17 +173,9 @@ and usually is maintained in the calling C<saR> object.
 =cut
 
 sub feed_data_cols {
-    my ( $self, $data_cols, $index, @cols ) = @_;
-
-    # do we have an index
-    my $first = $cols[0];
+    my ( $self, $data_cols, $index, $tstamp, @cols ) = @_;
 
     $self->debug(2, "data_cols:", $data_cols );
-
-    # take care of existence of first level in the hash (index)
-    #if ( !defined( $data_cols->{$index} ) ) {
-    #    $data_cols->{$index} = {};
-    #}
 
     # loop through columns
     foreach my $c (@cols) {
@@ -196,7 +189,10 @@ sub feed_data_cols {
             if ( defined $themax ) {
                 $next = 1 + $themax;
             }
-            $data_cols->{$index}->{$c} = $next;
+            $data_cols->{$index}->{$c}->{rank} = $next;
+            $data_cols->{$index}->{$c}->{start} = $tstamp;
+            $data_cols->{$index}->{$c}->{period} = undef;
+            $data_cols->{$index}->{$c}->{last} = undef;
         }
     }
 
@@ -251,6 +247,36 @@ sub load_data {
     #   INTR => { sum => 0 },
     #   IFACE => { rxpck/s => 0, txpck/s => 1, rxbyt/s => 2, ... },
     #   DEV => { tps => 0, rd_sec/s => 1, wr_sec/s => 2, ... },
+    #   };
+
+    #   %data_cols = {
+    #       NOIDX => {
+    #           'proc/s' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #               last   => undef,
+    #           },
+    #           'cswch/s' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #               last   => undef,
+    #           },
+    #       },
+    #       CPU => {
+    #           '%user' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #               last   => undef,
+    #           },
+    #           '%nice' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #           }
+    #       }
     #   };
     #
     # $data_cols will be used for rendering data in the output and
@@ -332,6 +358,16 @@ sub load_data {
 
             if ( $l =~ $time_re ) {
                 ( $time, $data ) = ( $1, $2 );
+
+                # compute time in secs from epoch
+                # TODO: define a timezone per machine and use it here.
+                my $tstamp = POSIX::mktime(
+                    POSIX::strptime(
+                        $context{date} . q( ) . $time,
+                        "%m/%d/%y %H:%M:%S %p"
+                    )
+                );
+
                 my @col_headers = split qr{ \s+ }imxs, $data;
                 $self->debug(2, "time=$time, col headers: ", @col_headers );
 
@@ -355,11 +391,24 @@ sub load_data {
 
                 # then add possible new cols to data file global
                 # %data_cols, get the current context index
-                $self->feed_data_cols( $data_cols, $context{index}, @col_headers );
+                $self->feed_data_cols( $data_cols, $context{index}, $tstamp, $context{hostname}, @col_headers );
 
                 # then get the new indexes for data in output tables
                 # [ 1 .. nr_of_metrics ]
                 @c2i = $self->cols_to_index( $context{index}, $data_cols, @col_headers );
+
+                # new kind of storage
+                # 1. if period not defined, then compute it, else check it.
+                # 2. add data to each storage
+                # 3. store last tstamp for all data cols
+
+                # QUESTIONS:
+                # - how to store data:
+                #   - per machine, per col --> start/period
+                #   - per col, per machine --> start/period
+                #   or
+                #   - per col/period -> machine -> start / data
+
             }
 
             # do not try to analyze data which are not there

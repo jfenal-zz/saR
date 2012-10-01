@@ -140,11 +140,13 @@ my @dirs = split qr{,}imxs, $dirs;
 @dirs = map { glob($_) } @dirs;
 my @exts = split qr{,}imxs, $extensions;
 
-my $s = saR->new( dir => \@dirs, ext => \@exts );
+my $db = sar::DB->new( "DBI:mysql:database=sar;host=localhost" , "sar", "Dxxrrd2xBdMsM4KM" );
+my $s = saR->new( dir => \@dirs, ext => \@exts , db=> $db);
 
 if ( defined $ENV{DEBUG} ) {
     print STDERR Dumper($s);
 }
+
 
 my @info = qw(hwmodel cpumodel cpus cores ram oslevel san);
 

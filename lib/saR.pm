@@ -83,19 +83,18 @@ sub new {
     %{ $self->{_config} } = @args;
 
     # Transform scalar values into an array
-    foreach my $s2a (qw( dir ext )) {
-        if ( defined( $self->{_config}->{$s2a} )
-            && ref( $self->{_config}->{$s2a} ) ne 'ARRAY' )
+    foreach my $s2a (qw( dir ext db )) {
+        if ( defined( $self->{$s2a} )
+            && ref( $self->{$s2a} ) ne 'ARRAY' )
         {
-            my $scalar_value = $self->{_config}->{$s2a};
-            @{ $self->{_config}->{$s2a} } = ($scalar_value);
+            my $scalar_value = $self->{$s2a};
+            @{ $self->{$s2a} } = ($scalar_value);
         }
     }
 
     # Set default values
-    if ( !defined( $self->{_config}->{dir} ) ) { $self->{_config}->{dir} = [] }
-    if ( !defined( $self->{_config}->{ext} ) ) {
-        $self->{_config}->{ext} = [q()];
+    if ( !defined( $self->{dir} ) ) { $self->{dir} = [] }
+    if ( !defined( $self->{ext} ) ) { $self->{ext} = [ q() ];
     }
 
     $self->{machines} = {};
@@ -123,8 +122,8 @@ sub find_machine_files {
         @fpatterns = @args;
     }
 
-    foreach my $dir ( @{ $self->{_config}->{dir} } ) {
-        foreach my $e ( @{ $self->{_config}->{ext} } ) {
+    foreach my $dir ( @{ $self->{dir} } ) {
+        foreach my $e ( @{ $self->{ext} } ) {
             my $end = q();
 
             # useless now we're using catfile
@@ -176,7 +175,8 @@ sub base_info {
 
     my @machines = keys %{$self->{machines}};
     foreach my $machine ( @machines ) {
-        my $loader = saR::Load->new( $self->{machines}->{$machine} );
+        my $loader = saR::Load->new( $self->{machines}->{$machine},
+        $self->{db} );
         $base_info{$machine} = $loader->base_info; 
     }
     return %base_info;
@@ -204,7 +204,8 @@ sub headers {
     my $total = scalar @machines;
     foreach my $machine ( @machines ) {
         print STDERR "Loading header data for machine $machine ($c/$total)\n";
-        my $loader = saR::Load->new( $self->{machines}->{$machine} );
+        my $loader = saR::Load->new( $self->{machines}->{$machine},
+        $self->{db} );
         $loader->load_data( \$self->{data_cols} );
         $c++;
     }
