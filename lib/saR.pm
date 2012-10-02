@@ -8,6 +8,7 @@ use Carp;
 use File::Basename;
 use File::Spec;
 use saR::Load;
+use saR::DB;
 
 =head1 NAME
 
@@ -80,15 +81,15 @@ sub new {
 
     bless $self, $class;
 
-    %{ $self->{_config} } = @args;
+    %{ $self } = @args;
 
     # Transform scalar values into an array
-    foreach my $s2a (qw( dir ext db )) {
+    foreach my $s2a (qw( dir ext )) {
         if ( defined( $self->{$s2a} )
             && ref( $self->{$s2a} ) ne 'ARRAY' )
         {
             my $scalar_value = $self->{$s2a};
-            @{ $self->{$s2a} } = ($scalar_value);
+            $self->{$s2a} = [ ($scalar_value) ];
         }
     }
 
@@ -134,14 +135,14 @@ sub find_machine_files {
             }
 
             foreach my $m ( @fpatterns ) {
-                $self->debug("Considering dir=$dir m=$m e=$end");
+                $self->debug(5, "Considering dir=$dir m=$m e=$end");
 
                 foreach my $candidate ( glob( File::Spec->catfile( $dir, $m) .  $end) ) {
-                $self->debug("Considering $candidate");
+                $self->debug(5, "Considering $candidate");
 
                 if ( -r $candidate ) {
                     my ($fname, $fdir, $suffix) = fileparse($candidate, $end);
-                    $self->debug("Found $candidate : $fname");
+                    $self->debug(5, "Found $candidate : $fname");
 
                     $self->{machines}->{$fname} = $candidate;
                 }
@@ -152,7 +153,7 @@ sub find_machine_files {
 
     my $mnumber = scalar keys %{ $self->{machines} };
     if ($mnumber == 0 ) {
-        $self->debug("No machine sar data file found");
+        warn "No machine sar data file found";
     }
     return $mnumber;
 }
@@ -175,8 +176,7 @@ sub base_info {
 
     my @machines = keys %{$self->{machines}};
     foreach my $machine ( @machines ) {
-        my $loader = saR::Load->new( $self->{machines}->{$machine},
-        $self->{db} );
+        my $loader = saR::Load->new( $self->{machines}->{$machine}, $self->{db} );
         $base_info{$machine} = $loader->base_info; 
     }
     return %base_info;
@@ -203,9 +203,8 @@ sub headers {
     my @machines = keys %{$self->{machines}};
     my $total = scalar @machines;
     foreach my $machine ( @machines ) {
-        print STDERR "Loading header data for machine $machine ($c/$total)\n";
-        my $loader = saR::Load->new( $self->{machines}->{$machine},
-        $self->{db} );
+        print STDERR "\nLoading header data for machine $machine ($c/$total)\n";
+        my $loader = saR::Load->new( $self->{machines}->{$machine}, $self->{db} );
         $loader->load_data( \$self->{data_cols} );
         $c++;
     }
@@ -234,7 +233,7 @@ sub data {
     my $total = scalar @machines;
     foreach my $machine ( @machines ) {
         print STDERR "Loading data for machine $machine ($c/$total)\n";
-        my $loader = saR::Load->new( $self->{machines}->{$machine} );
+        my $loader = saR::Load->new( $self->{machines}->{$machine}, $self->{db} );
         $loader->load_data( \$self->{data_cols}, \$self->{data} );
         $c++;
     }
@@ -252,11 +251,12 @@ Print debug information on STDERR when $ENV{DEBUG} is set.
 =cut
 
 sub debug {
-    my ( $self, @args ) = @_;
+    my ( $self, $level, @args ) = @_;
 
-    if ( defined $ENV{DEBUG} ) {
+    if ( defined $ENV{DEBUG} && $ENV{DEBUG} >= $level ) {
         print STDERR join( q( ), @args, "\n" );
     }
+
     return;
 }
 

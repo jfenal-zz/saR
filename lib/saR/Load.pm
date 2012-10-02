@@ -1,6 +1,5 @@
 package saR::Load;
 
-use 5.007003;
 use strict;
 use warnings;
 use English qw( -no_match_vars );
@@ -13,7 +12,7 @@ use Data::Dumper;
 #use Date::Parse;
 
 my $time_re =
-  qr{ \A ( \d\d [:] \d\d [:] \d\d (?: \s* AM | \s* PM )? ) \s* (.*) }imxs;
+  qr{ \A \s* ( \d\d [:] \d\d [:] \d\d (?: \s* AM | \s* PM )? ) \s+ (.*)}imxs;
 
 =head1 NAME
 
@@ -163,7 +162,7 @@ sub base_info {
 
 =head2 feed_data_cols
     
-    $s->feed_data_cols( \%data_cols, @cols );
+    $s->feed_data_cols( \%data_cols, $index, $tstamp, $hostname, @cols );
 
 Helper method to keep track of columns headers overall all files.
 
@@ -173,14 +172,14 @@ and usually is maintained in the calling C<saR> object.
 =cut
 
 sub feed_data_cols {
-    my ( $self, $data_cols, $index, $tstamp, @cols ) = @_;
+    my ( $self, $data_cols, $index, $tstamp, $hostname, @cols ) = @_;
 
     $self->debug(2, "data_cols:", $data_cols );
 
     # loop through columns
     foreach my $c (@cols) {
         if ( !defined( $data_cols->{$index}->{$c} ) ) {
-            $self->debug(1, "new column $c: index=$index");
+            $self->debug(5, "new column $c: index=$index");
 
             # we have a new column not already registered
             # find max col index for it
@@ -195,25 +194,7 @@ sub feed_data_cols {
             $data_cols->{$index}->{$c}->{last} = undef;
         }
     }
-
-    return;
-}
-
-=head2 cols_to_index
-
-    my @data_cols_indexes = $self->cols_to_index( $context{index}, \%data_cols, @cols );
-
-Returns a list of indexes to address data in table for given named
-columns.
-
-=cut
-
-sub cols_to_index {
-    my ( $self, $ctxidx, $data_cols, @cols ) = @_;
-
-    my @c2i = map { $data_cols->{$ctxidx}->{$_} } @cols;
-
-    return @c2i;
+    return $self->{db}->metric_ids($index, @cols);
 }
 
 =head2 load_data
@@ -306,22 +287,23 @@ sub load_data {
     my %read_col_pos;    # defined when finding a new data header line
                          # %read_col_pos = ( proc/s => 1, ...);
 
-    my @c2i;             # could also be named as data_col_pos
+    my %c2i;             # could also be named as data_col_pos
                          # addresses data in the columns in data output
 
     my $position_in_file;
     my $advance_incr = $size / 200;
     my $current_advance=0;
+    $context{date} = 'unknown';
   LOOP:
     while ( my $l = <$fh> ) {
         chomp $l;
         # Print advance in file read.
         $position_in_file = tell $fh;
         if ($position_in_file > $current_advance) {
-            print STDERR "=== File: $self->{file} " . int(100 * $position_in_file / $size) . "%\n";
+            print STDERR "\r=== File: $self->{file} ($context{date}): " . int(100 * $position_in_file / $size) . "%";
             $current_advance += $advance_incr;
         }
-        else { print STDERR '.'; }
+#        else { print STDERR '.'; }
 
 #
 # We have a new day header
@@ -334,39 +316,50 @@ sub load_data {
             # remove () in hostname
             $context{hostname} =~ s/[()]//g;
 
-            $self->debug(1, "Changed context to ",
+            $self->debug(5, "\nChanged context to ",
                 @context{qw(OS kernelver hostname date)} );
 
             $context{index} = 'NOIDX'; # defaumlt value.
                # delete $context{index};    # TODO: removing index will help spot
                                        # flaws in header/data reading logic
+
+            if (length($context{date}) == 8) {
+                my @d = split(qr{/}, $context{date});
+                # FIXME: dirty hack to cope sar output mixing years on 2
+                # or 4 positions
+                if ($d[2] > 70) { $d[2] += 1900; } else { $d[2] += 2000; }
+                $context{date} = join( '/', @d);
+            }
         }    # header line
 
         #
         # Treat data block header line (empty line separated)
         #
         if ( $l =~ m/^\s*$/ ) {
-            $self->debug(1, "Entering new data block following an empty line");
+            $self->debug(5, "\nEntering new data block following an empty line");
 
             # we got an empty line, get the header line
             $l = <$fh>;
             chomp $l;
 
-            $self->debug(1, "Header line: $l");
+            $self->debug(5, "Header line: $l");
 
             my ( $time, $data );
 
             if ( $l =~ $time_re ) {
                 ( $time, $data ) = ( $1, $2 );
 
+                $self->debug(5, "date: <$context{date}>");
+                $self->debug(5, "time: <$time>");
+                $self->debug(5, "data: <$data>");
+                carp "Missing date" if not defined $context{date};
+                carp "Missing time $time" if not defined $time;
                 # compute time in secs from epoch
                 # TODO: define a timezone per machine and use it here.
-                my $tstamp = POSIX::mktime(
-                    POSIX::strptime(
-                        $context{date} . q( ) . $time,
-                        "%m/%d/%y %H:%M:%S %p"
-                    )
-                );
+                my @ptime = 
+                    POSIX::strptime( "$context{date} $time", "%m/%d/%Y %H:%M:%S %p");
+                $self->debug(5, "ptime: ", Dumper \@ptime);
+                my $tstamp = POSIX::mktime( @ptime );
 
                 my @col_headers = split qr{ \s+ }imxs, $data;
                 $self->debug(2, "time=$time, col headers: ", @col_headers );
@@ -391,11 +384,8 @@ sub load_data {
 
                 # then add possible new cols to data file global
                 # %data_cols, get the current context index
-                $self->feed_data_cols( $data_cols, $context{index}, $tstamp, $context{hostname}, @col_headers );
-
-                # then get the new indexes for data in output tables
-                # [ 1 .. nr_of_metrics ]
-                @c2i = $self->cols_to_index( $context{index}, $data_cols, @col_headers );
+                # get index for column header right away
+                %c2i = $self->feed_data_cols( $data_cols, $context{index}, $tstamp, $context{hostname}, @col_headers );
 
                 # new kind of storage
                 # 1. if period not defined, then compute it, else check it.
@@ -431,27 +421,24 @@ sub load_data {
                 $index = shift @data;
             }
             $self->debug(2, "index=$index");
-            $self->debug(2, "New data line without index: ", Dumper \@data );
+            # should never be the case
+            if (! defined $context{index}) {
+                carp "New data line without index: ", Dumper \@data 
+            }
 
             # compute time in secs from epoch
             # TODO: define a timezone per machine and use it here.
             my $tstamp = POSIX::mktime(
                 POSIX::strptime(
                     $context{date} . q( ) . $time,
-                    "%m/%d/%y %H:%M:%S %p"
+                    "%m/%d/%Y %H:%M:%S %p"
                 )
             );
             my $hostname = $context{hostname};
 
-            # feed metrics loaded in the current line into
-            $self->debug(5, "hdata=", Dumper $hdata);
-            $self->debug(2, "hdata: $hdata (", ref $hdata , ")");
-            $self->debug(5, "c2i=", Dumper \@c2i);
-            # foreach my $i (@c2i) { $hdata->{$hostname}->{$index}->{$tstamp}->[$i] = shift @data; }
-            #$hdata->{$hostname}->{$index}->{$tstamp}->[@c2i] = @data;
-            foreach my $i (@c2i) { $hdata->{$hostname}->{$index}->{$tstamp}->{$i} = shift @data; }
-            $self->debug(5, "hdata=", Dumper $hdata);
-
+            # feed metrics loaded in the current line into db
+            # all at once
+            $self->{db}->insert_data( \%read_col_pos, $hostname, $tstamp, $index, @data);
         }
     }
 

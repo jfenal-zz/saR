@@ -1,6 +1,5 @@
 package saR::DB;
 
-use 5.007003;
 use strict;
 use warnings;
 use English qw( -no_match_vars );
@@ -58,45 +57,148 @@ sub new {
     my $self = {};
     bless $self, $class;
 
-    $self->{dbh} = DBI->connect($dsn, $u, $p) or die $DBI::errstr;
+    $self->{db} = DBI->connect($dsn, $u, $p) or die $DBI::errstr;
 
     return $self;
 }
 
 
-=head2 dbh
+=head2 db
 
-Return dbh.
+Return DBI db handler.
+
+  my $dbh = $self->db;
 
 =cut
 
-sub dbh {
+sub db {
     my ( $self ) = @_;
 
-    return $self->{dbh};
+    return $self->{db};
 }
 
 =head2 metric_ids
 
 Add metrics to list of know metrics, return ids for metrics passed.
 
+  $db->metric_ids(
+
 =cut
 
 sub metric_ids {
-    my ( $self, $hasindex, @metrics ) = @_;
+    my ( $self, $index, @metrics ) = @_;
 
-    %col2id=();
+    $self->debug(5, "In metric_ids", @metrics);
+    my %col2id=();
+    my $dbh =  $self->db;
 
-    my $rhr = $self->dbh->selectrow_hashref( qq{
-    select * from metrics;
-    } );
+    my $rhr = $dbh->selectall_hashref( q{ select * from metrics; }, 'metricname') or carp "Unable to get metrics " . $dbh->errstr;
+    
+    #insert into metrics (metricid, metricname, index) values (NULL, ?, ?);
+    my $q =  q{
+    INSERT INTO `sar`.`metrics` ( `metricid` , `metricname` , `index`) VALUES ( NULL , ?, ?);
+    };
 
-    %col2id = map { $rhr->{metric} => $rhr->{ 
+    my $sth = $self->db->prepare($q) or carp "Unable to prepare $q " . $dbh->errstr;
 
+    my $updated = 0;
+    foreach my $c (@metrics) {
+        if ( ! defined $rhr->{$c} ) {
+            $updated++;
+            $self->debug(5, "Adding metric $c to database ($index)");
+            $sth->bind_param(1, $c);
+            $sth->bind_param(2, $index);
+            $sth->execute or $self->debug(1, DBI::dump_results($sth));
+        }
+    }
+
+    $sth->finish;
+
+    # refresh from table if updated
+    if ($updated) {
+        $self->debug(2, "updating metrics from table");
+        $rhr = $dbh->selectall_hashref( q{ select * from metrics; }, 'metricname');
+    }
+    
+    %col2id = map { $_ => $rhr->{$_}->{metricid} } keys %$rhr;
+
+    # cache it
+    $self->{c2i} = \%col2id;
+
+    $self->debug(5, "metric_ids", Dumper \%col2id);
 
     return %col2id;
 }
 
+=head2 server_id
+
+Add server to database if unknown, return its id
+
+  $id = $db->server_id( 'hostname' );
+
+=cut
+
+sub server_id {
+    my ( $self, $hostname ) = @_;
+
+    $self->debug(5, "In server_ids", $hostname );
+    my %hostname2id=();
+
+    if (! defined $self->{servers}->{$hostname} ) {
+    my $dbh =  $self->db;
+
+    my $rhr = $dbh->selectall_hashref( qq{ select * from servers where servername="$hostname" ; }, 'servername') or carp "Unable to select serverid " . $dbh->errstr;
+    
+    if (! defined( $rhr->{$hostname} ) ) {
+        my $q =  q{ INSERT INTO `sar`.`servers` ( `servername` ) VALUES ( ? ); };
+
+        my $sth = $dbh->prepare($q) or carp "Unable to prepare $q " . $dbh->errstr;
+        $sth->execute( $hostname )
+            or $self->debug(1, DBI::dump_results($sth));
+        $sth->finish();
+
+        $rhr = $dbh->selectall_hashref( qq{ select * from servers where servername="$hostname" ; }, 'servername') or carp "Unable to select serverid " . $dbh->errstr;
+
+        }
+
+        $self->{servers}->{$hostname} = $rhr->{$hostname}->{serverid}
+    }
+    return $self->{servers}->{$hostname};
+}
+
+=head2 insert_data
+
+Insert line of data into the data table
+
+  $db->insert_data( \%read_col_pos, $hostname, $tstamp, $index, @data );
+
+TODO: Other options would be to read data blocks in memory, then dump
+entire columns in the database
+
+=cut
+
+sub insert_data {
+    my ( $self, $read_col_pos, $hostname, $tstamp, $index, @data ) = @_;
+
+    my $q = q{
+    INSERT INTO `sar`.`data` ( `tstamp`, `serverid`, `dataindex`, `metricid`, `value`) VALUES };
+
+    my $serverid = $self->server_id($hostname);
+    my $col=0;
+    my @qvalues = ();
+    foreach my $col (sort { $read_col_pos->{$a} <=> $read_col_pos->{$b} } keys %{$read_col_pos} ) {
+        $q .= "( ?, ?, ?, ?, ?),";
+        my $d = shift @data;
+        push @qvalues, ($tstamp, $serverid, $index, $self->{c2i}->{$col}, $d);
+    }
+    chop $q; # remove trailing C<,>
+
+    my $sth = $self->db->prepare($q);
+    $sth->execute(@qvalues) or carp "Unable to insert data $q";
+    $sth->finish();
+    
+    return;
+}
 
 
 =head2 debug

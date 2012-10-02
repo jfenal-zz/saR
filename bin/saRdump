@@ -140,12 +140,10 @@ my @dirs = split qr{,}imxs, $dirs;
 @dirs = map { glob($_) } @dirs;
 my @exts = split qr{,}imxs, $extensions;
 
-my $db = sar::DB->new( "DBI:mysql:database=sar;host=localhost" , "sar", "Dxxrrd2xBdMsM4KM" );
+my $db = saR::DB->new( "DBI:mysql:database=sar;host=localhost" , "sar", "Dxxrrd3xBdMsM4KM" );
 my $s = saR->new( dir => \@dirs, ext => \@exts , db=> $db);
 
-if ( defined $ENV{DEBUG} ) {
-    print STDERR Dumper($s);
-}
+$s->debug(5, "Config:" , Dumper($s));
 
 
 my @info = qw(hwmodel cpumodel cpus cores ram oslevel san);
@@ -180,14 +178,14 @@ if ($dump_headers) {
     my $headers = $s->headers();
 
     foreach my $index ( sort keys %{$headers} ) {
-        print "$index:\n";
+        $s->debug(2, "$index:\n");
         foreach my $col (
             sort { $headers->{$index}->{$a} <=> $headers->{$index}->{$b} }
             keys %{ $headers->{$index} } )
         {
-            print "    $col: $headers->{$index}->{$col}\n";
+            $s->debug(2, "    $col: " . Dumper( $headers->{$index}->{$col}) );
 
         }
     }
 }
-
+print "\n";
