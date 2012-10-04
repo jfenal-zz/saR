@@ -166,11 +166,34 @@ sub server_id {
     return $self->{servers}->{$hostname};
 }
 
+
+=head2 prepare_insert_data
+
+  $db->prepare_insert_data( \%read_col_pos, $hostname );
+
+=cut
+
+sub prepare_insert_data {
+    my ( $self, $read_col_pos, $hostname ) = @_;
+    my $serverid = $self->server_id($hostname);
+
+    my $q = q{ INSERT INTO `sar`.`data` ( `tstamp`, `serverid`, `dataindex`, `metricid`, `value`) VALUES };
+    foreach my $col (sort { $read_col_pos->{$a} <=> $read_col_pos->{$b} } keys %{$read_col_pos} ) {
+        $q .= "( ?, $serverid, ?, ?, ?),";
+    }
+    chop $q; # remove trailing C<,>
+
+    my $sth = $self->db->prepare($q);
+    $self->{sth} = $sth;
+    $self->{time} = time();
+    return $sth;
+}
+
 =head2 insert_data
 
 Insert line of data into the data table
 
-  $db->insert_data( \%read_col_pos, $hostname, $tstamp, $index, @data );
+  $db->insert_data( \%read_col_pos, $tstamp, $index, @data );
 
 TODO: Other options would be to read data blocks in memory, then dump
 entire columns in the database
@@ -178,25 +201,36 @@ entire columns in the database
 =cut
 
 sub insert_data {
-    my ( $self, $read_col_pos, $hostname, $tstamp, $index, @data ) = @_;
+    my ( $self, $read_col_pos, $tstamp, $index, @data ) = @_;
 
-    my $q = q{
-    INSERT INTO `sar`.`data` ( `tstamp`, `serverid`, `dataindex`, `metricid`, `value`) VALUES };
+    my $q = q{ INSERT INTO `sar`.`data` ( `tstamp`, `serverid`, `dataindex`, `metricid`, `value`) VALUES };
 
-    my $serverid = $self->server_id($hostname);
     my $col=0;
     my @qvalues = ();
     foreach my $col (sort { $read_col_pos->{$a} <=> $read_col_pos->{$b} } keys %{$read_col_pos} ) {
-        $q .= "( ?, ?, ?, ?, ?),";
         my $d = shift @data;
-        push @qvalues, ($tstamp, $serverid, $index, $self->{c2i}->{$col}, $d);
+        push @qvalues, ($tstamp, $index, $self->{c2i}->{$col}, $d);
     }
-    chop $q; # remove trailing C<,>
 
-    my $sth = $self->db->prepare($q);
-    $sth->execute(@qvalues) or carp "Unable to insert data $q";
-    $sth->finish();
+    $self->{sth}->execute(@qvalues) or carp "Unable to insert data $q";
     
+    return;
+}
+
+=head2 finish_insert_data
+
+Finish the statement handler used for a data block.
+
+=cut
+sub finish_insert_data {
+    my ( $self, $lines ) = @_;
+
+    if (defined $self->{sth} && defined $lines) {
+        $self->{sth}->finish();
+        delete $self->{sth};
+    }
+
+    $self->debug(1, "\nLoaded $lines lines in ", time() - $self->{time}, " seconds");
     return;
 }
 

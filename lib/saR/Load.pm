@@ -293,7 +293,9 @@ sub load_data {
     my $position_in_file;
     my $advance_incr = $size / 200;
     my $current_advance=0;
+    my $line_count = 0;
     $context{date} = 'unknown';
+
   LOOP:
     while ( my $l = <$fh> ) {
         chomp $l;
@@ -338,6 +340,11 @@ sub load_data {
         if ( $l =~ m/^\s*$/ ) {
             $self->debug(5, "\nEntering new data block following an empty line");
 
+            # first of all, finish a potentially active statement handler
+            $self->{db}->finish_insert_data($line_count);
+
+            # reset data block line count
+            $line_count = 0;
             # we got an empty line, get the header line
             $l = <$fh>;
             chomp $l;
@@ -387,6 +394,10 @@ sub load_data {
                 # get index for column header right away
                 %c2i = $self->feed_data_cols( $data_cols, $context{index}, $tstamp, $context{hostname}, @col_headers );
 
+                # and now open a new insert statement handler
+                $self->{db}->prepare_insert_data( \%read_col_pos, $context{hostname});
+
+                # TODO, if needed
                 # new kind of storage
                 # 1. if period not defined, then compute it, else check it.
                 # 2. add data to each storage
@@ -411,6 +422,8 @@ sub load_data {
         # Regexp should address both 12 AM/PM & 24 hours time format in sar
         if ( $doload && $l =~ $time_re ) {
             my ( $time, $data ) = ( $1, $2 );
+            $line_count++;
+
             my @data = split qr{ \s+ }mxs, $data;
             $self->debug(2, "Splitted new data line: ", Dumper \@data );
 
@@ -438,7 +451,7 @@ sub load_data {
 
             # feed metrics loaded in the current line into db
             # all at once
-            $self->{db}->insert_data( \%read_col_pos, $hostname, $tstamp, $index, @data);
+            $self->{db}->insert_data( \%read_col_pos, $tstamp, $index, @data);
         }
     }
 
