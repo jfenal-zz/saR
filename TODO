@@ -1,8 +1,13 @@
+
 Ideas to borrown from pGraph:
 - define timezone for specific machines
 - define rules of conversion for CPU power, e.g. this processor performs
   20% faster than this one.
 
+Filter per data index context :
+- CPU : feed only "all" to database
+- IFACE : only relevant interfaces
+- etc.
 
 Ideas:
 
