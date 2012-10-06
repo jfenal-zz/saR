@@ -1,15 +1,18 @@
 package saR::Load;
 
-use 5.007;
 use strict;
 use warnings;
-use Exporter qw( import );
 use English qw( -no_match_vars );
 use Carp;
+
+use POSIX;
+use POSIX::strptime;
 use List::Util qw(max);
 use Data::Dumper;
+#use Date::Parse;
 
-my $time_re = qr{ \A ( \d\d [:] \d\d [:] \d\d (?:\s*AM|\s*PM)? ) \s* (.*) }imxs;
+my $time_re =
+  qr{ \A \s* ( \d\d [:] \d\d [:] \d\d (?: \s* AM | \s* PM )? ) \s+ (.*)}imxs;
 
 =head1 NAME
 
@@ -75,13 +78,12 @@ None.
 =cut
 
 sub new {
-    my ( $class, $file ) = @_;
+    my ( $class, $file, $db ) = @_;
 
     my $self = {};
     bless $self, $class;
     $self->{file} = $file;
-
-# FIXME: this one should be global to a saR session accross multiple files, not saR::Load
+    $self->{db} = $db;
 
     return $self;
 }
@@ -89,6 +91,8 @@ sub new {
 =head2 open_file
 
 Open the file for read
+
+Returns the size of the file.
 
 =cut
 
@@ -101,7 +105,14 @@ sub open_file {
     }
     $self->{fh} = $fh;
 
-    return $self;
+    my $size;
+
+    seek $fh, 0, POSIX::SEEK_END;
+    $size = tell $fh;
+    seek $fh, 0, POSIX::SEEK_SET;
+    
+
+    return $size;
 }
 
 =head2 base_info
@@ -151,7 +162,7 @@ sub base_info {
 
 =head2 feed_data_cols
     
-    $s->feed_data_cols( \%data_cols, @cols );
+    $s->feed_data_cols( \%data_cols, $index, $tstamp, $hostname, @cols );
 
 Helper method to keep track of columns headers overall all files.
 
@@ -161,45 +172,29 @@ and usually is maintained in the calling C<saR> object.
 =cut
 
 sub feed_data_cols {
-    my ( $self, $data_cols, @cols ) = @_;
+    my ( $self, $data_cols, $index, $tstamp, $hostname, @cols ) = @_;
 
-    # do we have an index
-    my $first = $cols[0];
-    my $index = 'noidx';
-    $data_cols = $$data_cols;   # get hashref from ref
-
-    $self->debug("data_cols:", $data_cols);
-
-    # an index column are spotted as all uppercase
-    if ( $first eq uc($first) ) {
-
-        # if one present, remove it from the list of real data cols
-        $index = shift @cols;
-    }
-    $self->debug("index=$index, cols:", @cols);
-
-    # take care of existence of first level in the hash (index)
-    if ( !defined( $data_cols->{$index} ) ) {
-        $data_cols->{$index} = {};
-    }
+    $self->debug(2, "data_cols:", $data_cols );
 
     # loop through columns
     foreach my $c (@cols) {
         if ( !defined( $data_cols->{$index}->{$c} ) ) {
-            $self->debug("new column $c: index=$index");
+            $self->debug(5, "new column $c: index=$index");
 
             # we have a new column not already registered
             # find max col index for it
             my $themax = max( values %{ $data_cols->{$index} } );
-            my $next = 0;
-            if (defined $themax) {
+            my $next   = 0;
+            if ( defined $themax ) {
                 $next = 1 + $themax;
             }
-            $data_cols->{$index}->{$c} = $next;
+            $data_cols->{$index}->{$c}->{rank} = $next;
+            $data_cols->{$index}->{$c}->{start} = $tstamp;
+            $data_cols->{$index}->{$c}->{period} = undef;
+            $data_cols->{$index}->{$c}->{last} = undef;
         }
     }
-
-    return $index;
+    return $self->{db}->metric_ids($index, @cols);
 }
 
 =head2 load_data
@@ -209,51 +204,108 @@ Load data from the current file in the loader.
 The optional argument specifies whether to actually load the data or
 not. If not, only headers from data blocks will be loaded and kept.
 
-  $hdata = $loader->load_data( \%data_cols );    # load data
-  $hdata = $loader->load_data( \%data_cols, 0 );   # load only headers
+  # load data
+  $loader->load_data( \%data_cols, \%data );
+
+  # load only headers
+  $loader->load_data( \%data_cols );
+
+Return value: none yet.
 
 =cut
 
 sub load_data {
     my ( $self, @args ) = @_;
 
-    my $data_cols = shift @args;
+    my ( $data_cols, $hdata ) = @args;
 
-    $self->debug( "data_cols=", Dumper($data_cols) );
+    $self->debug(2, "data_cols=", Dumper($data_cols) );
+    $self->debug(5, "hdata=", Dumper($hdata) );
 
     # %data_cols = {
-    #   noidx => { proc/s => 0, cswch/s => 1, pswpin/s => 2, ... },
+    #   NOIDX => { proc/s => 0, cswch/s => 1, pswpin/s => 2, ... },
     #   CPU => { %user => 0, %nice => 1, %system => 2, ... },
     #   INTR => { sum => 0 },
     #   IFACE => { rxpck/s => 0, txpck/s => 1, rxbyt/s => 2, ... },
     #   DEV => { tps => 0, rd_sec/s => 1, wr_sec/s => 2, ... },
+    #   };
+
+    #   %data_cols = {
+    #       NOIDX => {
+    #           'proc/s' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #               last   => undef,
+    #           },
+    #           'cswch/s' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #               last   => undef,
+    #           },
+    #       },
+    #       CPU => {
+    #           '%user' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #               last   => undef,
+    #           },
+    #           '%nice' => {
+    #               rank   => 0,
+    #               start  => $tstamp,
+    #               period => undef,
+    #           }
+    #       }
     #   };
     #
     # $data_cols will be used for rendering data in the output and
     # has to be maintained globally for all sar files to read.
     #
 
-    my $doload = 1;
+    # flag: should we load data or not?
+    my $doload = 0;
 
-    if ( defined $args[0] ) {
-        $doload = shift @args;
+    $data_cols = $$data_cols;   # get hashref from ref
+
+    # load actual data (e.g. not only headers) if we have a hash ref to
+    # store data passed as an argument
+    if ( defined $hdata ) {
+        $doload = 1;
+        $hdata=$$hdata;         # get hashref from ref
+        $self->debug(1, "Initial data=", Dumper($hdata) );
     }
 
-    my $hdata = {};
-
     # open file for read
-    $self->open_file;
+    my $size = $self->open_file;
 
     my $nline = 0;
     my $fh    = $self->{fh};
-  LOOP:
 
     my %context;         # context : OS kernelver hostname date [ arch ncpus ]
     my %read_col_pos;    # defined when finding a new data header line
-                         # %col_pos = ( proc/s => 1, ...);
+                         # %read_col_pos = ( proc/s => 1, ...);
 
+    my %c2i;             # could also be named as data_col_pos
+                         # addresses data in the columns in data output
+
+    my $position_in_file;
+    my $advance_incr = $size / 200;
+    my $current_advance=0;
+    my $line_count = 0;
+    $context{date} = 'unknown';
+
+  LOOP:
     while ( my $l = <$fh> ) {
         chomp $l;
+        # Print advance in file read.
+        $position_in_file = tell $fh;
+        if ($position_in_file > $current_advance) {
+            print STDERR "\r=== File: $self->{file} ($context{date}): " . int(100 * $position_in_file / $size) . "%";
+            $current_advance += $advance_incr;
+        }
+#        else { print STDERR '.'; }
 
 #
 # We have a new day header
@@ -266,40 +318,102 @@ sub load_data {
             # remove () in hostname
             $context{hostname} =~ s/[()]//g;
 
-            $self->debug( "Changed context to ",
+            $self->debug(5, "\nChanged context to ",
                 @context{qw(OS kernelver hostname date)} );
 
-            delete $context{index};    # removing index will help spot
+            $context{index} = 'NOIDX'; # defaumlt value.
+               # delete $context{index};    # TODO: removing index will help spot
                                        # flaws in header/data reading logic
+
+            if (length($context{date}) == 8) {
+                my @d = split(qr{/}, $context{date});
+                # FIXME: dirty hack to cope sar output mixing years on 2
+                # or 4 positions
+                if ($d[2] > 70) { $d[2] += 1900; } else { $d[2] += 2000; }
+                $context{date} = join( '/', @d);
+            }
         }    # header line
 
         #
         # Treat data block header line (empty line separated)
         #
         if ( $l =~ m/^\s*$/ ) {
-            $self->debug("Entering new data block following an empty line");
+            $self->debug(5, "\nEntering new data block following an empty line");
 
+            # first of all, finish a potentially active statement handler
+            $self->{db}->finish_insert_data($line_count);
+
+            # reset data block line count
+            $line_count = 0;
             # we got an empty line, get the header line
             $l = <$fh>;
-    
+            chomp $l;
+
+            $self->debug(5, "Header line: $l");
+
             my ( $time, $data );
+
             if ( $l =~ $time_re ) {
                 ( $time, $data ) = ( $1, $2 );
+
+                $self->debug(5, "date: <$context{date}>");
+                $self->debug(5, "time: <$time>");
+                $self->debug(5, "data: <$data>");
+                carp "Missing date" if not defined $context{date};
+                carp "Missing time $time" if not defined $time;
+                # compute time in secs from epoch
+                # TODO: define a timezone per machine and use it here.
+                my @ptime = 
+                    POSIX::strptime( "$context{date} $time", "%m/%d/%Y %H:%M:%S %p");
+                $self->debug(5, "ptime: ", Dumper \@ptime);
+                my $tstamp = POSIX::mktime( @ptime );
+
                 my @col_headers = split qr{ \s+ }imxs, $data;
-                $self->debug("time=$time, col headers: ", @col_headers);
+                $self->debug(2, "time=$time, col headers: ", @col_headers );
 
                 # first make %col_pos for this block
                 my $c = 0;
 
-                # TODO: doesn't matter if we keep the potential index
+                # Do we have an index ?
+                if ($col_headers[0] eq uc($col_headers[0])) {
+                    $context{index} = $col_headers[0];
+                    shift @col_headers;
+                }
+                else {
+                    $context{index} = 'NOIDX';
+                }
+
+                # reset data period to 0
+                $context{period} = 0;
+
                 %read_col_pos = map { $_ => $c++ } @col_headers;
-                $self->debug( '%read_col_pos : ' . Dumper( \%read_col_pos ) );
+                $self->debug(3, '%read_col_pos : ' . Dumper( \%read_col_pos ) );
 
                 # then add possible new cols to data file global
                 # %data_cols, get the current context index
-                $context{index} =
-                  $self->feed_data_cols( $data_cols, @col_headers );
+                # get index for column header right away
+                %c2i = $self->feed_data_cols( $data_cols, $context{index}, $tstamp, $context{hostname}, @col_headers );
+
+                # and now open a new insert statement handler
+                $self->{db}->prepare_insert_data( \%read_col_pos, $context{hostname});
+
+                # TODO, if needed
+                # new kind of storage
+                # 1. if period not defined, then compute it, else check it.
+                # 2. add data to each storage
+                # 3. store last tstamp for all data cols
+
+                # QUESTIONS:
+                # - how to store data:
+                #   - per machine, per col --> start/period
+                #   - per col, per machine --> start/period
+                #   or
+                #   - per col/period -> machine -> start / data
+
             }
+
+            # do not try to analyze data which are not there
+            next LOOP;
         }
 
         #
@@ -308,18 +422,41 @@ sub load_data {
         # Regexp should address both 12 AM/PM & 24 hours time format in sar
         if ( $doload && $l =~ $time_re ) {
             my ( $time, $data ) = ( $1, $2 );
-            my @cols = split qr{ \s+ }mxs, $data;
+            $line_count++;
 
-            $self->debug("Splitted new data line: ", @cols);
+            my @data = split qr{ \s+ }mxs, $data;
+            $self->debug(2, "Splitted new data line: ", Dumper \@data );
 
-            # do something with this data. Later.
+            # if in the context, we are supposed to have an index, set
+            # it, otherwise, use 'NOIDX'
+            my $index = 'NOIDX';
+            if ( $context{index} ne 'NOIDX' ) {
+                $index = shift @data;
+            }
+            $self->debug(2, "index=$index");
+            # should never be the case
+            if (! defined $context{index}) {
+                carp "New data line without index: ", Dumper \@data 
+            }
+
+            # compute time in secs from epoch
+            # TODO: define a timezone per machine and use it here.
+            my $tstamp = POSIX::mktime(
+                POSIX::strptime(
+                    $context{date} . q( ) . $time,
+                    "%m/%d/%Y %H:%M:%S %p"
+                )
+            );
+            my $hostname = $context{hostname};
+
+            # feed metrics loaded in the current line into db
+            # all at once
+            $self->{db}->insert_data( \%read_col_pos, $tstamp, $index, @data);
         }
-
-        # data line
     }
 
     $self->close_file;
-    return $hdata;
+    return;
 }
 
 =head2 close_file
@@ -346,9 +483,9 @@ Print debug info.
 =cut
 
 sub debug {
-    my ( $self, @args ) = @_;
+    my ( $self, $level, @args ) = @_;
 
-    if ( defined $ENV{DEBUG} ) {
+    if ( defined $ENV{DEBUG} && $ENV{DEBUG} >= $level) {
         print STDERR join( q( ), @args, "\n" );
     }
 
@@ -367,9 +504,11 @@ Set C<DEBUG> environment variable to dump debug information.
 
 =head1 DEPENDENCIES
 
-None outside Perl's core modules.
+In Perl's core modules used (L<POSIX>, L<Carp>, L<English>,
+L<Data::Dumper>), C<List::Util> is also used (shipped in Core starting
+with Perl 5.7.3).
 
-C<List::Util> is used, in Core starting with Perl 5.7.3.
+Outside: L<Date::Parse>.
 
 =head1 INCOMPATIBILITIES
 

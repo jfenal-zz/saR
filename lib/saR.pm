@@ -8,6 +8,7 @@ use Carp;
 use File::Basename;
 use File::Spec;
 use saR::Load;
+use saR::DB;
 
 =head1 NAME
 
@@ -80,25 +81,26 @@ sub new {
 
     bless $self, $class;
 
-    %{ $self->{_config} } = @args;
+    %{ $self } = @args;
 
     # Transform scalar values into an array
     foreach my $s2a (qw( dir ext )) {
-        if ( defined( $self->{_config}->{$s2a} )
-            && ref( $self->{_config}->{$s2a} ) ne 'ARRAY' )
+        if ( defined( $self->{$s2a} )
+            && ref( $self->{$s2a} ) ne 'ARRAY' )
         {
-            my $scalar_value = $self->{_config}->{$s2a};
-            @{ $self->{_config}->{$s2a} } = ($scalar_value);
+            my $scalar_value = $self->{$s2a};
+            $self->{$s2a} = [ ($scalar_value) ];
         }
     }
 
     # Set default values
-    if ( !defined( $self->{_config}->{dir} ) ) { $self->{_config}->{dir} = [] }
-    if ( !defined( $self->{_config}->{ext} ) ) {
-        $self->{_config}->{ext} = [q()];
+    if ( !defined( $self->{dir} ) ) { $self->{dir} = [] }
+    if ( !defined( $self->{ext} ) ) { $self->{ext} = [ q() ];
     }
 
     $self->{machines} = {};
+    $self->{data_cols} = {};
+    $self->{data} = {};
 
     $self->find_machine_files;
 
@@ -121,8 +123,8 @@ sub find_machine_files {
         @fpatterns = @args;
     }
 
-    foreach my $dir ( @{ $self->{_config}->{dir} } ) {
-        foreach my $e ( @{ $self->{_config}->{ext} } ) {
+    foreach my $dir ( @{ $self->{dir} } ) {
+        foreach my $e ( @{ $self->{ext} } ) {
             my $end = q();
 
             # useless now we're using catfile
@@ -133,14 +135,14 @@ sub find_machine_files {
             }
 
             foreach my $m ( @fpatterns ) {
-                $self->debug("Considering dir=$dir m=$m e=$end");
+                $self->debug(5, "Considering dir=$dir m=$m e=$end");
 
                 foreach my $candidate ( glob( File::Spec->catfile( $dir, $m) .  $end) ) {
-                $self->debug("Considering $candidate");
+                $self->debug(5, "Considering $candidate");
 
                 if ( -r $candidate ) {
                     my ($fname, $fdir, $suffix) = fileparse($candidate, $end);
-                    $self->debug("Found $candidate : $fname");
+                    $self->debug(5, "Found $candidate : $fname");
 
                     $self->{machines}->{$fname} = $candidate;
                 }
@@ -151,7 +153,7 @@ sub find_machine_files {
 
     my $mnumber = scalar keys %{ $self->{machines} };
     if ($mnumber == 0 ) {
-        $self->debug("No machine sar data file found");
+        warn "No machine sar data file found";
     }
     return $mnumber;
 }
@@ -172,12 +174,14 @@ sub base_info {
 
     my %base_info;
 
-    foreach my $machine ( keys %{$self->{machines}} ) {
-        my $loader = saR::Load->new( $self->{machines}->{$machine} );
+    my @machines = keys %{$self->{machines}};
+    foreach my $machine ( @machines ) {
+        my $loader = saR::Load->new( $self->{machines}->{$machine}, $self->{db} );
         $base_info{$machine} = $loader->base_info; 
     }
     return %base_info;
 }
+
 
 =head2 headers
 
@@ -195,24 +199,46 @@ C<load_data()> method first to avoid reading the files twice.
 sub headers {
     my ( $self, @args ) = @_;
 
-    my %base_info;
-
-    # if the data is not already loaded, load it without the data.
-
-    if ( ! defined $self->{data_cols} ) {
-        $self->{data_cols} = {};
-    }
-
     my $c=1;
-    my $total = scalar(keys %{$self->{machines}});
-    foreach my $machine ( keys %{$self->{machines}} ) {
-        print STDERR "Loading header data for machine $machine ($c/$total)\n";
-        my $loader = saR::Load->new( $self->{machines}->{$machine} );
-        $loader->load_data( \$self->{data_cols}, 0);
+    my @machines = keys %{$self->{machines}};
+    my $total = scalar @machines;
+    foreach my $machine ( @machines ) {
+        print STDERR "\nLoading header data for machine $machine ($c/$total)\n";
+        my $loader = saR::Load->new( $self->{machines}->{$machine}, $self->{db} );
+        $loader->load_data( \$self->{data_cols} );
         $c++;
     }
 
     return $self->{data_cols};
+}
+
+=head2 data
+
+Read all files for headers, and returns a reference to a hash of hashes
+containing the data header information.
+
+    my %data = %{ $s->data() };
+
+B<Caveat:> This data is also loaded during the C<load_data()> invocation.
+If you need it along with the actual data, be sure to invoke the
+C<load_data()> method first to avoid reading the files twice.
+
+=cut
+
+sub data {
+    my ( $self, @args ) = @_;
+
+    my $c=1;
+    my @machines = keys %{$self->{machines}};
+    my $total = scalar @machines;
+    foreach my $machine ( @machines ) {
+        print STDERR "Loading data for machine $machine ($c/$total)\n";
+        my $loader = saR::Load->new( $self->{machines}->{$machine}, $self->{db} );
+        $loader->load_data( \$self->{data_cols}, \$self->{data} );
+        $c++;
+    }
+
+    return $self->{data};
 }
 
 
@@ -225,11 +251,12 @@ Print debug information on STDERR when $ENV{DEBUG} is set.
 =cut
 
 sub debug {
-    my ( $self, @args ) = @_;
+    my ( $self, $level, @args ) = @_;
 
-    if ( defined $ENV{DEBUG} ) {
+    if ( defined $ENV{DEBUG} && $ENV{DEBUG} >= $level ) {
         print STDERR join( q( ), @args, "\n" );
     }
+
     return;
 }
 

@@ -10,7 +10,7 @@ use Data::Dumper;
 
 use Getopt::Long qw(:config bundling);
 
-our $VERSION='0.01';
+our $VERSION = '0.01';
 
 =head1 NAME
 
@@ -110,16 +110,16 @@ under the same terms as Perl itself.
 
 =cut
 
-
-# 
+#
 # analyze options
 #
-my ($extensions, $dirs, $cols);
-my ($dump_info, $dump_data, $dump_headers) = (0, 0, 0);
+my ( $extensions, $dirs, $cols );
+my ( $dump_info, $dump_data, $dump_headers ) = ( 0, 0, 0 );
+
 # Set defaults
 $extensions = 'txt';
-$dirs = q(.);
-$cols = q();
+$dirs       = q(.);
+$cols       = q();
 
 my $result = GetOptions(
     'e|extensions=s' => \$extensions,
@@ -135,22 +135,24 @@ my $result = GetOptions(
   );
 
 my @dirs = split qr{,}imxs, $dirs;
+
 # expand globs in dirs
-@dirs = map { glob( $_ ) } @dirs;
+@dirs = map { glob($_) } @dirs;
 my @exts = split qr{,}imxs, $extensions;
 
-my $s = saR->new( dir => \@dirs, ext => \@exts);
+my $db = saR::DB->new( "DBI:mysql:database=sar;host=localhost" , "sar", "Dxxrrd3xBdMsM4KM" );
+my $s = saR->new( dir => \@dirs, ext => \@exts , db=> $db);
 
-if (defined $ENV{DEBUG} ) {
-    print STDERR Dumper($s);
-}
+$s->debug(5, "Config:" , Dumper($s));
+
 
 my @info = qw(hwmodel cpumodel cpus cores ram oslevel san);
 
-# 
+#
 # Dump base info
 #
 if ($dump_info) {
+
     # get base info
     my %base_info = $s->base_info();
 
@@ -163,18 +165,27 @@ if ($dump_info) {
     }
 }
 
+if ($dump_data) {
+    my $data = $s->data();
+
+    # data
+    # timestamp machine noidx all% %metrics ...
+    # timestamp machine INDEX:idx all% %metrics ...
+    print Dumper  $data;
+}
+
 if ($dump_headers) {
     my $headers = $s->headers();
 
     foreach my $index ( sort keys %{$headers} ) {
-        print "$index:\n";
-        foreach
-          my $col ( sort { $headers->{$index}->{$a} <=> $headers->{$index}->{$b} } keys %{$headers->{$index}} )
+        $s->debug(2, "$index:\n");
+        foreach my $col (
+            sort { $headers->{$index}->{$a} <=> $headers->{$index}->{$b} }
+            keys %{ $headers->{$index} } )
         {
-            print "    $col: $headers->{$index}->{$col}\n";
+            $s->debug(2, "    $col: " . Dumper( $headers->{$index}->{$col}) );
 
         }
     }
 }
-
-
+print "\n";
