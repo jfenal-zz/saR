@@ -7,7 +7,7 @@ The ultimate goal with this data will be to feed it to R for global
 treatment and graphs.
 
 INSTALLATION
-============
+------------
 
 To install this module, run the following commands:
 
@@ -17,7 +17,7 @@ To install this module, run the following commands:
 	./Build install
 
 SUPPORT AND DOCUMENTATION
-=========================
+-------------------------
 
 After installing, you can find documentation for this module with the
 perldoc command.
@@ -37,7 +37,7 @@ You can also look for information at:
 
 
 LICENSE AND COPYRIGHT
-=====================
+---------------------
 
 Copyright © 2012 Jérôme Fenal
 
@@ -45,5 +45,5 @@ This program is free software; you can redistribute it and/or modify it
 under the terms of either: the GNU General Public License as published
 by the Free Software Foundation; or the Artistic License.
 
-See (http://dev.perl.org/licenses/ Perl Licensing) for more information.
+See (http://dev.perl.org/licenses/) for more information.
 
