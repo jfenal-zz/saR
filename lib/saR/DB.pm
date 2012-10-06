@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use English qw( -no_match_vars );
 use Carp;
-
+use Time::HiRes qw( time ) ;
 use DBI;
 use List::Util qw(max);
 use Data::Dumper;
