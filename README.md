@@ -1,9 +1,10 @@
 saR
 ===
 
-Load text sar data from one or multiple systems.
-The ultimate goal with this data will be to feed it to R or gnuplot, but
-let's first get the C<saR::Load> working, and we'll see from there.
+Load text sar data from one or multiple systems, and feed it to a
+database.
+The ultimate goal with this data will be to feed it to R for global
+treatment and graphs.
 
 INSTALLATION
 ============
@@ -25,27 +26,24 @@ perldoc command.
 
 You can also look for information at:
 
-    RT, CPAN's request tracker (report bugs here)
-        http://rt.cpan.org/NoAuth/Bugs.html?Dist=saR
-
-    AnnoCPAN, Annotated CPAN documentation
-        http://annocpan.org/dist/saR
-
-    CPAN Ratings
-        http://cpanratings.perl.org/d/saR
-
-    Search CPAN
-        http://search.cpan.org/dist/saR/
+* RT, CPAN's request tracker (report bugs here)
+  (http://rt.cpan.org/NoAuth/Bugs.html?Dist=saR)
+* AnnoCPAN, Annotated CPAN documentation
+  (http://annocpan.org/dist/saR)
+* CPAN Ratings
+  (http://cpanratings.perl.org/d/saR)
+* Search CPAN
+  (http://search.cpan.org/dist/saR/)
 
 
 LICENSE AND COPYRIGHT
 =====================
 
-Copyright (C) 2012 Jérôme Fenal
+Copyright © 2012 Jérôme Fenal
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of either: the GNU General Public License as published
 by the Free Software Foundation; or the Artistic License.
 
-See http://dev.perl.org/licenses/ for more information.
+See (http://dev.perl.org/licenses/ Perl Licensing) for more information.
 
