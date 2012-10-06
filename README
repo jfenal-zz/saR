@@ -1,10 +1,12 @@
 saR
+===
 
 Load text sar data from one or multiple systems.
 The ultimate goal with this data will be to feed it to R or gnuplot, but
 let's first get the C<saR::Load> working, and we'll see from there.
 
 INSTALLATION
+============
 
 To install this module, run the following commands:
 
@@ -14,6 +16,7 @@ To install this module, run the following commands:
 	./Build install
 
 SUPPORT AND DOCUMENTATION
+=========================
 
 After installing, you can find documentation for this module with the
 perldoc command.
@@ -36,6 +39,7 @@ You can also look for information at:
 
 
 LICENSE AND COPYRIGHT
+=====================
 
 Copyright (C) 2012 Jérôme Fenal
 
